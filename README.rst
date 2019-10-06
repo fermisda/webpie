@@ -530,6 +530,78 @@ Session Management
 Jinja2 Environment
 ------------------
 
+WebPie is aware of Jinja2 template library and provides some shortcuts in using it.
+
+To make your application work with Jinja2, you need to initialize Jinja2 environment first:
+
+.. code-block:: python
+
+	from webpie import WPApp, WPHandler		
+		
+	class MyHandler(WPHandler):    
+        # ...
+	
+
+    class MyApp(WPApp):
+        # ...
+
+	application = MyApp(MyHandler)
+    application.initJinjaEnvironment(
+        tempdirs = [...],
+        filters = {...},
+        globals = {...}
+    )
+
+The initJinjaEnvironment method accepts 3 arguments:
+
+  * tempdirs - list of directories where to look for Jinja2 templates,
+  
+  * filters - dictionary with filter names and filter functions to add to the environment,
+  
+  * globals - dictionary with "global" variables, which will be added to the list of variables when a template is 
+  rendered
+  
+  
+Here is an example of such an application and corresponding template:
+
+
+.. code-block:: python
+
+    # templates.py
+    from webpie import WPApp, WPHandler
+    import time
+
+    Version = "1.3"
+
+    def format_time(t):
+        return time.ctime(t)
+
+    class MyHandler(WPHandler):						
+
+        def time(self, request, relpath):
+            return self.render_to_response("time.html", t=time.time())
+        
+    application = WPApp(MyHandler)
+    application.initJinjaEnvironment(
+        ["samples"], 
+        filters={ "format": format_time },
+        globals={ "version": Version }
+        )
+    application.run_server(8080)
+
+and the template time.html is:
+
+.. code-block:: html
+
+    <html>
+    <body>
+    <p>Current time is {{t|format}}</p>
+    <p style="float:right"><i>Version: {{version}}</i></p>
+    </body>
+    </html>
+
+
+
 Advanced Topics
 ---------------
 
