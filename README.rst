@@ -554,12 +554,12 @@ To make your application work with Jinja2, you need to initialize Jinja2 environ
 
 The initJinjaEnvironment method accepts 3 arguments:
 
-  * tempdirs - list of directories where to look for Jinja2 templates,
+ tempdirs - list of directories where to look for Jinja2 templates,
   
-  * filters - dictionary with filter names and filter functions to add to the environment,
+ filters - dictionary with filter names and filter functions to add to the environment,
   
-  * globals - dictionary with "global" variables, which will be added to the list of variables when a template is 
-  rendered
+ globals - dictionary with "global" variables, which will be added to the list of variables when a template is 
+ rendered
   
   
 Here is an example of such an application and corresponding template:
