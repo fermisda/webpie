@@ -589,7 +589,7 @@ Here is an example of such an application and corresponding template:
         )
     application.run_server(8080)
 
-and the template time.html is:
+and the template samples/time.html is:
 
 .. code-block:: html
 
@@ -600,7 +600,14 @@ and the template time.html is:
     </body>
     </html>
 
+In this example, the application initializes the Jinja2 environment with "samples" as the templates location,
+function "format_time" becomes the filter used to display numeric time as date/time string and "global"
+variable "version" is set to the version of the code.
 
+Then handler calls the "render_to_response" method, inherited from WPHandler to render the template "time.html"
+with current time passed as the "t" argument, and implicitly "version" passed to the rendering as a global
+variable. The "render_to_response" method renders the template and returns properly constructed Response
+object with content type set to "text/html".
 
 Advanced Topics
 ---------------
