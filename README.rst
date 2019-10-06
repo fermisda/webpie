@@ -7,7 +7,7 @@ WebPie makes it simple to develop thread-safe object-oriented web applications.
 Hello World in WebPie
 ---------------------
 
-Here is the simplest web application you can write:
+Here is the simplest WebPie application you can write:
 
 .. code-block:: python
 
@@ -376,6 +376,13 @@ iterable, status, content_type
 iterable, status, headers
 ======================================  =================================== ==================================================================
 
+The response body can be returned either as a single string or bytes object, or as a list of strings or
+bytes objects or as an iterable (generator or iterator), producing a sequence of strings or bytes objects.
+If the handler method returns strings, under Python3, they will be converted to bytes using utf-8 conversion.
+If you want to use some other encoding, then you must convert your strings to bytes before returning
+from the handler method.
+
+
 Static Content
 --------------
 
@@ -603,7 +610,7 @@ In this example, the application initializes the Jinja2 environment with "sample
 function "format_time" becomes the filter used to display numeric time as date/time string and "global"
 variable "version" is set to the version of the code.
 
-Then handler calls the "render_to_response" method, inherited from WPHandler to render the template "time.html"
+Then the handler calls the "render_to_response" method, inherited from WPHandler, to render the template "time.html"
 with current time passed as the "t" argument, and implicitly "version" passed to the rendering as a global
 variable. The "render_to_response" method renders the template and returns properly constructed Response
 object with content type set to "text/html".
