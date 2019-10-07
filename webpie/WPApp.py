@@ -189,7 +189,6 @@ class WPHandler:
 
     Version = ""
     
-    RouteMap = []
     _Strict = False
     _Methods = None
     
@@ -200,6 +199,7 @@ class WPHandler:
         self.BeingDestroyed = False
         try:    self.AppURL = request.application_url
         except: self.AppURL = None
+        self.RouteMap = []
 
     def _app_lock(self):
         return self.App._app_lock()
@@ -208,6 +208,14 @@ class WPHandler:
         # override me
         pass
 
+    def addHandler(self, path, handler):
+        #
+        # path - fnmatch string
+        # handler - either WPHandler object or a web method function
+        #
+        if not (callable(handler) or isinstance(handler, (Response, tuple, str, bytes, WPHandler))):
+            raise ValueError("Invalid handler type: %s" % (type(handler),))
+        self.RouteMap.append((path, handler))
         
     def wsgi_call(self, environ, start_response):
         # path_to = '/'
@@ -269,7 +277,7 @@ class WPHandler:
     
         if not path_down:
             if callable(self):
-                return self(request, "", **request["query_dict"])
+                return self(request, "", **args)
             else:
                 return HTTPNotFound("Invalid path %s" % (request.path_info,))
         
@@ -300,10 +308,23 @@ class WPHandler:
                     return method(request, relpath, **args)
                 else:
                     return HTTPForbidden(request.path_info)
+
+        path_down_str = "/".join(path_down)
+        # Try route map
+        for pattern, handler in self.RouteMap:
+            if fnmatch.fnmatch(path_down_str, pattern):
                 
+                if isinstance(handler, WPHandler):
+                    return handler.walk_down(request, path, path_down, args)
+                elif isinstance(handler, (tuple, str, bytes, Response)):
+                    return handler
+                else:
+                    # assume callable
+                    return handler(request, path_down_str, **args)
+
         # Try callable
         if callable(self):
-            return self(request, "/".join(path_down), **args)
+            return self(request, path_down_str, **args)
         
         # ... otherwise ...
         return HTTPNotFound("Invalid path %s" % (request.path_info,))

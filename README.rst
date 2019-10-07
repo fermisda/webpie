@@ -378,7 +378,7 @@ iterable, status, headers
 
 The response body can be returned either as a single string or bytes object, or as a list of strings or
 bytes objects or as an iterable (generator or iterator), producing a sequence of strings or bytes objects.
-If the handler method returns strings, under Python3, they will be converted to bytes using utf-8 conversion.
+If the handler method returns strings, under Python3, they will be converted to bytes using UTF-8 conversion.
 If you want to use some other encoding, then you must convert your strings to bytes before returning
 from the handler method.
 
