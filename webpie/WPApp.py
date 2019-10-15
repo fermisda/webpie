@@ -155,11 +155,11 @@ def makeResponse(resp):
         elif isinstance(body_or_iter, Iterable):
             if PY3:
                 if hasattr(body_or_iter, "__next__"):
-                    print ("converting iterator")
+                    #print ("converting iterator")
                     body_or_iter = (to_bytes(x) for x in body_or_iter)
                 else:
                     # assume list or tuple
-                    print ("converting list")
+                    #print ("converting list")
                     body_or_iter = [to_bytes(x) for x in body_or_iter]
             response.app_iter = body_or_iter
         else:
@@ -289,7 +289,11 @@ class WPHandler:
             if isinstance(member, WPHandler):
                 child = member
                 return child.walk_down(request, path + "/" + top_path_item, path_down[1:], args)
-            elif callable(member):
+
+            #
+            # methods with names starting with underscore are not allowed
+            #
+            elif not top_path_item.startswith("_") and callable(member):
                 method_name = top_path_item
                 method = member
                 allowed = False
