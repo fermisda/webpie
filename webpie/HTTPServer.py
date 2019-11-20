@@ -3,9 +3,7 @@ from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue
 from .WebPieApp import Response
 
-PY2 = sys.version_info[0] == 2
-PY3 = sys.version_info[0] == 3
-
+from .py3 import PY2, PY3, to_str, to_bytes
 Debug = False
         
 class BodyFile(object):
@@ -156,7 +154,7 @@ class HTTPConnection(Task):
         return True                     # request received, even if it is invalid
             
     def addToBody(self, data):
-        if PY3 and isinstance(data, str):   data = bytes(data)
+        if PY3:   data = to_bytes(data)
         #print ("addToBody:", data)
         self.Body.append(data)
 
@@ -286,8 +284,8 @@ class HTTPConnection(Task):
                 #print("OutIterable removed")
         if line is not None:
             try:
-                if isinstance(line, str) and sys.version_info >= (3,):
-                    line = bytes(line, "utf-8")
+                if PY3:
+                    line = to_bytes(line)
                 sent = self.CSock.send(line)
             except: 
                 sent = 0

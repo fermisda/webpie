@@ -588,12 +588,8 @@ class WPApp(object):
             if not ok:
                 return None
                 
-            print("convertPath: %s:%s -> %s %s" % (path, self.Prefix, matched, ok))
-
             if self.ReplacePrefix is not None:
                 path = self.ReplacePrefix + (path[len(matched):] or "/")
-                
-            print("convertPath:    -> %s" % (path,))
                 
         return path
                 
@@ -611,8 +607,6 @@ class WPApp(object):
         
         environ["PATH_INFO"] = path
 
-        print("__call__: path=%s" % (path,))
-        
         req = Request(environ)
         if not self.Initialized:
             self.ScriptName = environ.get('SCRIPT_NAME','')
