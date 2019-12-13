@@ -381,14 +381,15 @@ class WPHandler:
         pass
 
     def addEnvironment(self, d):
+        #print("addEnvironment: App.Version: '%s'" % (self.App.Version,))
         params = {  
             'APP_URL':  self.AppURL,
             'MY_PATH':  self.Path,
             "GLOBAL_AppTopPath":    self.scriptUri(),
             "GLOBAL_AppDirPath":    self.uriDir(),
             "GLOBAL_ImagesPath":    self.uriDir()+"/images",
-            "GLOBAL_AppVersion":    self.Version,
-            "GLOBAL_AppObject":     self,
+            "GLOBAL_AppVersion":    self.App.Version,
+            "GLOBAL_AppObject":     self.App
             }
         params = self.App.addEnvironment(params)
         params.update(d)
