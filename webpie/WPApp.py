@@ -221,9 +221,9 @@ class WPHandler:
         # path_to = '/'
         path = environ.get('PATH_INFO', '')
         path_down = path.split("/")
+        args = self.parseQuery(environ.get("QUERY_STRING", ""))
+        request = Request(environ)
         try:
-            args = self.parseQuery(environ.get("QUERY_STRING", ""))
-            request = Request(environ)
             #response = self.walk_down(request, path_to, path_down)    
             response = self.walk_down(request, "", path_down, args)    
         except HTTPFound as val:    
@@ -380,8 +380,11 @@ class WPHandler:
         # override me
         pass
 
-    def addEnvironment(self, d):
-        #print("addEnvironment: App.Version: '%s'" % (self.App.Version,))
+    def jinja_globals(self):
+        # override me
+        return {}
+
+    def add_globals(self, d):
         params = {  
             'APP_URL':  self.AppURL,
             'MY_PATH':  self.Path,
@@ -391,16 +394,17 @@ class WPHandler:
             "GLOBAL_AppVersion":    self.App.Version,
             "GLOBAL_AppObject":     self.App
             }
-        params = self.App.addEnvironment(params)
+        params = self.App.add_globals(params)
+        params.update(self.jinja_globals())
         params.update(d)
         return params
 
     def render_to_string(self, temp, **args):
-        params = self.addEnvironment(args)
+        params = self.add_globals(args)
         return self.App.render_to_string(temp, **params)
 
     def render_to_iterator(self, temp, **args):
-        params = self.addEnvironment(args)
+        params = self.add_globals(args)
         #print 'render_to_iterator:', params
         return self.App.render_to_iterator(temp, **params)
 
@@ -535,7 +539,7 @@ class WPApp(object):
     def setJinjaGlobals(self, globals):
             self.JGlobals = {}
             self.JGlobals.update(globals)
-        
+
     def applicationErrorResponse(self, headline, exc_info):
         typ, val, tb = exc_info
         exc_text = traceback.format_exception(typ, val, tb)
@@ -633,24 +637,24 @@ class WPApp(object):
                     "Uncaught exception", sys.exc_info())
         return resp(environ, start_response)
         
-    def JinjaGlobals(self):
+    def jinja_globals(self):
         # override me
         return {}
 
-    def addEnvironment(self, d):
+    def add_globals(self, d):
         params = {}
         params.update(self.JGlobals)
-        params.update(self.JinjaGlobals())
+        params.update(self.jinja_globals())
         params.update(d)
         return params
         
     def render_to_string(self, temp, **kv):
         t = self.JEnv.get_template(temp)
-        return t.render(self.addEnvironment(kv))
+        return t.render(self.add_globals(kv))
 
     def render_to_iterator(self, temp, **kv):
         t = self.JEnv.get_template(temp)
-        return t.generate(self.addEnvironment(kv))
+        return t.generate(self.add_globals(kv))
 
     def run_server(self, port, **args):
         from .HTTPServer import HTTPServer
