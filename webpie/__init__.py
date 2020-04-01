@@ -2,6 +2,7 @@ from .WebPieApp import (WebPieApp, WebPieHandler, Response, app_synchronized, we
     WebPieStaticHandler)
 from .WebPieSessionApp import (WebPieSessionApp,)
 from .WPApp import WPApp, WPHandler
+from .WPSessionApp import WPSessionApp
 from .HTTPServer import (HTTPServer, HTTPSServer, run_server)
 
 

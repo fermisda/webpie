@@ -78,6 +78,7 @@ class HTTPConnection(Task):
         self.ResponseStatus = None
         self.OriginalPathInfo = self.PathInfo = None
         self.ValidRequest = False
+        self.Started = None
         
     def debug(self, msg):
         if Debug:
@@ -257,10 +258,10 @@ class HTTPConnection(Task):
             if self.ValidRequest:
                 self.processRequest()
             else:
-                self.shutdown()
+                self.shutdown("Invalid request")
 
         if self.ReadClosed and not self.RequestReceived:
-            self.shutdown()
+            self.shutdown("EOF while reading request")
                     
     def doWrite(self):
         #print ("doWrite: outbuffer:", len(self.OutBuffer))
@@ -292,15 +293,15 @@ class HTTPConnection(Task):
             self.BytesSent += sent
             if not sent:
                 #self.debug("write socket closed")
-                self.shutdown()
+                self.shutdown("write socket closed")
                 return
             else:
                 line = line[sent:]
                 self.OutBuffer = line or None
         
-    def shutdown(self):
+    def shutdown(self, message=None):
             self.Server.log(self.CAddr, self.RequestMethod, self.URL, self.ResponseStatus, self.BytesSent)
-            self.debug("shutdown")
+            self.debug("shutdown: reason=%s" % (message or "",))
             if self.CSock != None:
                 self.debug("closing client socket")
                 try:    
@@ -314,6 +315,7 @@ class HTTPConnection(Task):
                 self.Server = None
             
     def run(self):
+        self.Started = time.time()
         while self.CSock is not None:       # shutdown() will set it to None
             rlist = [] if self.ReadClosed else [self.CSock]
             wlist = [self.CSock] if self.OutputEnabled else []
@@ -322,8 +324,10 @@ class HTTPConnection(Task):
                 self.doClientRead()
             if self.CSock in wlist:
                 self.doWrite()
-            if self.OutputEnabled and not self.OutBuffer and self.OutIterable is None:
-                self.shutdown()     # noting else to send
+            if (self.OutputEnabled and not self.OutBuffer and self.OutIterable is None):
+                self.shutdown("Done successfully") # noting else to send
+            elif (time.time() > self.Started + 10.0 and not self.RequestReceived):
+                self.shutdown("Timeout while reading request from the client")     
                 
 class HTTPServer(PyThread):
 
@@ -455,10 +459,13 @@ class HTTPSServer(HTTPServer):
     def __init__(self, port, app, certfile, keyfile, password=None, **args):
         HTTPServer.__init__(self, port, app, **args)
         import ssl
-        self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLS)
+        #self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLS)
+        self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
-        self.SSLContext.verify_mode = ssl.CERT_OPTIONAL
+        self.SSLContext.load_verify_locations(cafile="ca_bundle.pem")
+        self.SSLContext.verify_mode = ssl.CERT_NONE
         self.SSLContext.load_default_certs()
+        print("Context created")
         
     def createConnection(self, csock, caddr):
         from ssl import SSLError
