@@ -468,7 +468,6 @@ class WPHandler:
     def session(self):
         return self.Request.environ["webpie.session"]
         
-        
 class WPApp(object):
 
     Version = "Undefined"
@@ -487,7 +486,10 @@ class WPApp(object):
             static_path="/static", static_location="static", enable_static=False,
             prefix=None, replace_prefix=None,
             disable_robots=True):
-        assert issubclass(root_class, WPHandler)
+        if not isinstance(root_class, type) and callable(root_class):
+            # if it's in fact a function, use LambdaHandlerFactory to wrap 
+            # the function into a LambdaHandler
+            root_class = LambdaHandlerFactory(root_class)
         self.RootClass = root_class
         self.JEnv = None
         self._AppLock = RLock()
@@ -662,6 +664,24 @@ class WPApp(object):
         srv.start()
         srv.join()
 
+class LambdaHandler(WPHandler):
+    
+    def __init__(self, func, request, app):
+        WPHandler.__init__(self, request, app)
+        self.F = func
+        
+    def __call__(self, request, relpath, **args):
+        out = self.F(request, relpath, **args)
+        return out
+        
+class LambdaHandlerFactory(object):
+    
+    def __init__(self, func):
+        self.Func = func
+        
+    def __call__(self, request, app):
+        return LambdaHandler(self.Func, request, app)
+        
 if __name__ == '__main__':
     from HTTPServer import HTTPServer
     

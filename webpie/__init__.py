@@ -1,7 +1,7 @@
-from .WebPieApp import (WebPieApp, WebPieHandler, Response, app_synchronized, webmethod, atomic,
+from .WebPieApp import (WebPieApp, WebPieHandler, Response, 
     WebPieStaticHandler)
 from .WebPieSessionApp import (WebPieSessionApp,)
-from .WPApp import WPApp, WPHandler
+from .WPApp import WPApp, WPHandler, app_synchronized, webmethod, atomic
 from .WPSessionApp import WPSessionApp
 from .HTTPServer import (HTTPServer, HTTPSServer, run_server)
 
