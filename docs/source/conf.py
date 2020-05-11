@@ -22,6 +22,8 @@ copyright = '2020, Igor Mandrichenko'
 author = 'Igor Mandrichenko'
 
 
+
+
 # -- General configuration ---------------------------------------------------
 
 # Add any Sphinx extension module names here, as strings. They can be
@@ -50,3 +52,6 @@ html_theme = 'alabaster'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+
+master_doc = 'index'

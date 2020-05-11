@@ -35,7 +35,7 @@ Sometimes, while walking down the tree of handlers to find the method to handle 
 unused portion of URI after the name of the target handler method. For example, in our clock example, we may want to
 structure our URL to specify the field of the current time we want to see in the following way:
 
-.. code-block::
+.. code-block:: shell
 
 	http://localhost:8080/time/month    # month only
 	http://localhost:8080/time/minute   # minute only
@@ -77,7 +77,7 @@ url_args
 Anoter, perhaps more conventional way of doing this is to use so called query parameters to specify the
 format of the date/time representation, e.g.:
 
-.. code-block::
+.. code-block:: shell
 
 	http://localhost:8080/time?field=minute
 
