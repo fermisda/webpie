@@ -1,13 +1,10 @@
 # hello_world.py
+
 from webpie import WPApp, WPHandler
-import time
 
-class MyHandler(WPHandler):						
+class MyHandler(WPHandler):                         # 1
 
-	def hello(self, request, relpath):				
-		return "Hello, World!\n"					
+    def hello(self, request, relpath):              # 2
+        return "Hello, World!\n"                    # 3
 
-	def time(self, request, relpath):			# 1
-		return time.ctime()+"\n", "text/plain"		# 2
-
-application = WPApp(MyHandler)
+WPApp(MyHandler).run_server(8080)                   # 4

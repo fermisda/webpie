@@ -11,7 +11,7 @@ class RobotsHandler(WPHandler):
     def __call__(self, request, relpath, **args):
         return robots_response
 
-class MyHandler(WPHandler):		
+class MyHandler(WPHandler):             
     
     def __init__(self, *params):
         WPHandler.__init__(self, *params)
@@ -21,8 +21,8 @@ class MyHandler(WPHandler):
         self.addHandler("robots4.txt",                          # as Response object
                 Response(robots_response, content_type="text/plain"))
         
-    def robots(self, request, relpath, **args):				
-        return robots_response				
+    def robots(self, request, relpath, **args):                         
+        return robots_response                          
 
 application = WPApp(MyHandler)
 application.run_server(8080)

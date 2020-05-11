@@ -3,13 +3,13 @@
 from webpie import WPApp, WPHandler, Response
 import time, json
 
-class MyHandler(WPHandler):						
+class MyHandler(WPHandler):                                             
 
-    def hello(self, request, relpath):				
-        return "Hello, World!\n"					
+    def hello(self, request, relpath):                          
+        return "Hello, World!\n"                                        
 
-    def time(self, request, relpath):				
-        return time.ctime()+"\n", "text/plain"		
+    def time(self, request, relpath):                           
+        return time.ctime()+"\n", "text/plain"          
     
     def time_response(self, request, relpath):
         return Response(time.ctime()+"\n", content_type="text/plain")

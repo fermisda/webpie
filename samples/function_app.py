@@ -1,6 +1,10 @@
+# function_app.py
+
 from webpie import WPApp
 
-def hello(request, relpath, **args):
-    return "hello there, "+relpath
+def hello(request, relpath):
+    who = relpath or "world"
+    return "Hello, "+who, "text/plain"
 
-WPApp(hello).run_server(8080)
+WPApp(reverse).run_server(8080)
+

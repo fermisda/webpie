@@ -7,7 +7,7 @@ Version = "1.3"
 def format_time(t):
     return time.ctime(t)
 
-class MyHandler(WPHandler):						
+class MyHandler(WPHandler):                                             
 
     def time(self, request, relpath):
         return self.render_to_response("time.html", t=time.time())

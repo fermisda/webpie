@@ -52,7 +52,7 @@ def webmethod(permissions=None):
             if permissions is not None:
                 try:    roles = handler._roles(request, relpath)
                 except:
-                    return HTTPForbidden("Can not authorize client")
+                    return HTTPForbidden("Not authorized\n")
                 if isinstance(roles, str):
                     roles = [roles]
                 for r in roles:
@@ -483,21 +483,24 @@ class WPApp(object):
     }
 
     def __init__(self, root_class, strict=False, 
-            static_path="/static", static_location="static", enable_static=False,
+            static_path="/static", static_location=None, enable_static=False,
             prefix=None, replace_prefix=None,
             disable_robots=True):
         if not isinstance(root_class, type) and callable(root_class):
             # if it's in fact a function, use LambdaHandlerFactory to wrap 
             # the function into a LambdaHandler
             root_class = LambdaHandlerFactory(root_class)
-        self.RootClass = root_class
-        self.JEnv = None
-        self._AppLock = RLock()
-        self._Strict = strict
-        self.ScriptHome = None
+            
+        enable_static = enable_static or (static_location is not None)
+        if static_location is None: static_location = "./static"
         self.StaticPath = static_path
         self.StaticLocation = static_location
         self.StaticEnabled = enable_static and static_location
+        
+        self.RootClass = root_class
+        self.JEnv = None
+        self._AppLock = RLock()
+        self.ScriptHome = None
         self.Initialized = False
         self.DisableRobots = disable_robots
         self.Prefix = prefix

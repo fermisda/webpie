@@ -1,5 +1,5 @@
-# time_count.py
-from webpie import WPApp, WPHandler
+# time_count_thread_safe.py
+from webpie import WPApp, WPHandler, atomic
 import time
 
 class Handler(WPHandler):                                               
@@ -12,7 +12,8 @@ class App(WPApp):
     def __init__(self, handler_class):
         WPApp.__init__(self, handler_class)
         self.Counter = 0
-        
+    
+    @atomic
     def bump_counter(self):
         self.Counter += 1
         return self.Counter
