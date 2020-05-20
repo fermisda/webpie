@@ -456,16 +456,17 @@ class HTTPServer(PyThread):
             
 class HTTPSServer(HTTPServer):
 
-    def __init__(self, port, app, certfile, keyfile, password=None, **args):
+    def __init__(self, port, app, certfile, keyfile, ca_file=None, password=None, **args):
         HTTPServer.__init__(self, port, app, **args)
         import ssl
         #self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLS)
         self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
-        self.SSLContext.load_verify_locations(cafile="ca_bundle.pem")
+        if ca_file is not None:
+            self.SSLContext.load_verify_locations(cafile=ca_file)
         self.SSLContext.verify_mode = ssl.CERT_NONE
         self.SSLContext.load_default_certs()
-        print("Context created")
+        #print("Context created")
         
     def createConnection(self, csock, caddr):
         from ssl import SSLError
