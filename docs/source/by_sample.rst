@@ -1,5 +1,5 @@
-WebPie by sample
-================
+Sample-by-sample Guide into WebPie
+==================================
 
 This document demonstrates various features of WebPie using short code samples.
 
@@ -40,6 +40,55 @@ Now we can test it:
     $ curl http://localhost:8080/hello
     Hello world!
     $ 
+
+HTTP Server
+-----------
+WebPie comes with its own HTTP/HTTPS server, which can be used to deploy a web service quicky without using some heavy-duty HTTP server
+machinery like Apache httpd or nginx.
+
+The hello_world.py sample above shows the easiest way to run the WebPie app under the HTTP server. Here is more detailed sample:
+
+.. code-block:: python
+
+	# http_server.py
+
+	from webpie import HTTPServer, WPHandler, WPApp
+	import sys, time
+
+	class TimeHandler(WPHandler):
+    
+	    def time(self, relpath, **args):            # simple "what time is it?" server
+	        return time.ctime(time.time())
+
+	app = WPApp(TimeHandler)                        # create app object
+
+	port = 8080
+
+	srv = HTTPSServer(port, app,                    # create HTTP server thread - subclass of threading.Thread
+	    max_connections=3, max_queued=5             # concurrency contorl
+	)     
+               
+	srv.start()                                     # start the server
+	srv.join()                                      # run forever
+
+HTTP Server is a standard Python ``threading.Thread`` object. It will listen on the specified port and start new thread for every incoming
+HTTP request. Arguments ``max_connections`` and ``max_queued`` control how many requests will be processed simultaneously and
+how many will be waiting to be processed. If the load is too high and the queue gets full, all other requests will be rejected.
+
+If you do not want to control the server and want to use some reasonable defaults, you can simply do this:
+
+.. code-block:: python
+
+	from webpie import WPHandler, WPApp
+	import sys, time
+
+	class TimeHandler(WPHandler):
+    
+	    def time(self, relpath, **args):           
+	        return time.ctime(time.time())
+
+	WPApp(TimeHandler).run_server(8080)
+
 
 relpath
 -------
@@ -268,7 +317,7 @@ In simple cases, you can even use a Python function as a handler.
         who = relpath or "world"
         return "Hello, "+who, "text/plain"
 
-    WPApp(reverse).run_server(8080)
+    WPApp(hello).run_server(8080)
 
 
 The Shortest WebPie App

@@ -495,6 +495,7 @@ class WPApp(object):
         if static_location is None: static_location = "./static"
         self.StaticPath = static_path
         self.StaticLocation = static_location
+        print("App init: StaticLocation:", static_location)
         self.StaticEnabled = enable_static and static_location
         
         self.RootClass = root_class
@@ -558,18 +559,20 @@ class WPApp(object):
         return Response(text, status = '500 Application Error')
 
     def static(self, relpath):
+        print("WPApp.static: relpath:", relpath)
         while ".." in relpath:
             relpath = relpath.replace("..",".")
         home = self.StaticLocation
+        print("WPApp.static: home:", home)
         path = os.path.join(home, relpath)
-        #print "static: path=", path
+        print ("static: path:", path)
         try:
             st_mode = os.stat(path).st_mode
             if not stat.S_ISREG(st_mode):
                 #print "not a regular file"
                 raise ValueError("Not regular file")
         except:
-            #raise
+            raise
             return Response("Not found", status=404)
 
         ext = path.rsplit('.',1)[-1]
