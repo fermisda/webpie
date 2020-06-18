@@ -15,14 +15,12 @@ WebPie - web applications framework for Python
 .. image:: https://img.shields.io/pypi/pyversions/webpie.svg
     :target: https://pypi.org/project/webpie/
 
-
-
-
-
 **WebPie** (pronounced: web-py) is a simple, elegant, object-oriented web applications development framework for Python.
 
 Here is how **WebPie** says "Hello, World!"::
 
+	# hello_world_wsgi.py
+	
 	from webpie import WPApp, WPHandler
 
 	class MyHandler(WPHandler):                      
@@ -30,7 +28,7 @@ Here is how **WebPie** says "Hello, World!"::
 	    def hello(self, request, relpath):           
 	        return "Hello, World!"                 
 
-	app = WPApp(MyHandler)             
+	application = WPApp(MyHandler)             
 
 
 And here is a bit less human-readable way of doing the same::
@@ -42,11 +40,38 @@ And here is a bit less human-readable way of doing the same::
 	def hello_world():
 	    return 'Hello, World!'
 
-In fact, with WebPie it can be even shorter, but still readable, although not really object - oriented any more::
+In fact, with WebPie it can be even a bit shorter, but still readable, although not really object-oriented any more::
 
     from webpie import WPApp
-    def hello(request, relpath):    return "Hello, World!"
-    app = WPApp(hello)
+	
+    def hello(request, relpath):    
+		return "Hello, World!"
+		
+    application = WPApp(hello)
+	
+The examples above stop at creating WPApp object, which is in fact a standard WSGI application. Now it has to be plugged into a HTTP
+server to become a web service. To do that, you can either use third-party HTTP server compatible with WSGI, such as Apache httpd with mod_wsgi
+or nginx/uWSGI. For example:
+
+.. code-block:: bash
+
+	$ uwsgi --http :8080 --wsgi-file hello_world_wsgi.py
+
+A simpler way to fire up your application is to use the HTTP/HTTPS server, which comes with WebPie:
+
+.. code-block:: python
+
+	from webpie import WPApp, WPHandler
+
+	class MyHandler(WPHandler):                      
+
+	    def hello(self, request, relpath):           
+	        return "Hello, World!"                 
+
+	app = WPApp(MyHandler)
+	app.run_server(8080)         
+
+
 
 WebPie main features
 --------------------
@@ -55,7 +80,7 @@ WebPie main features
 - Receive and process URI query arguments as method named arguments
 - Support for static contents
 - WebPie App is a standard WSGI application, so it can be plugged into any popular HTTP srever with WSGI support
-- WebPie comes with its own HTTP/HTTPS server class, which can be used for light weight applications
+- WebPie comes with its own HTTP/HTTPS server, which can be used to run light weight web applications
 - Support for sessions
 - WebPie App object persists between requests, so it can be used to keep long-term context, database connections, etc.
 - WebPie helps you build multi-threaded web servrices easily
