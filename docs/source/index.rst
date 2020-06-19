@@ -15,23 +15,23 @@ WebPie - web applications framework for Python
 .. image:: https://img.shields.io/pypi/pyversions/webpie.svg
     :target: https://pypi.org/project/webpie/
 
-**WebPie** (pronounced: web-py) is a simple, elegant, object-oriented web applications development framework for Python.
+WebPie (pronounced: web-py) is a intuitive, simple yet powerful object-oriented web applications development framework for Python.
 
-Here is how **WebPie** says "Hello, World!"::
+Here is how WebPie says "Hello, World!"::
 
 	# hello_world_wsgi.py
 	
 	from webpie import WPApp, WPHandler
 
-	class MyHandler(WPHandler):                      
+	class HelloHandler(WPHandler):                      
 
 	    def hello(self, request, relpath):           
 	        return "Hello, World!"                 
 
-	application = WPApp(MyHandler)             
+	application = WPApp(HelloHandler)             
 
 
-And here is a bit less human-readable way of doing the same::
+And here is an alternative using one of popular frameworks::
 
 	from flask import Flask
 	app = Flask(__name__)
@@ -62,16 +62,15 @@ A simpler way to fire up your application is to use the HTTP/HTTPS server, which
 .. code-block:: python
 
 	from webpie import WPApp, WPHandler
+	import time
 
-	class MyHandler(WPHandler):                      
+	class Clock(WPHandler):                      
 
-	    def hello(self, request, relpath):           
-	        return "Hello, World!"                 
+	    def time(self, request, relpath):           
+	        return time.ctime()                 
 
-	app = WPApp(MyHandler)
+	app = WPApp(Clock)
 	app.run_server(8080)         
-
-
 
 WebPie main features
 --------------------
@@ -84,10 +83,10 @@ WebPie main features
 - Support for sessions
 - WebPie App object persists between requests, so it can be used to keep long-term context, database connections, etc.
 - WebPie helps you build multi-threaded web servrices easily
-- WebPie is Jinja2-friendly
+- WebPie is `Jinja2 <https://palletsprojects.com/p/jinja>`_-friendly
 - WebPie comes with its own WebSockets server implementation module
 - Python 2.7 and 3.7-3.8 supported
-- WebPie uses WebOb to parse and represent the HTTP request
+- WebPie uses `WebOb <https://webob.org>`_ to parse and represent the HTTP request
 
 
 More Details

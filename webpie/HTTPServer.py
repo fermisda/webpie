@@ -343,7 +343,7 @@ class HTTPServer(PyThread):
 
     def __init__(self, port, app, remove_prefix = "", url_pattern="*", max_connections = 100, 
                 enabled = True, max_queued = 100,
-                logging = True, log_file = None):
+                logging = False, log_file = None):
         PyThread.__init__(self)
         #self.debug("Server started")
         self.Port = port
@@ -472,12 +472,12 @@ class HTTPSServer(HTTPServer):
         from ssl import SSLError
         try:    
             tls_socket = self.SSLContext.wrap_socket(csock, server_side=True)
-        except SSLError as e:
+        except Exception as e:
             self.log_error(caddr, str(e))
             csock.close()
             return None
         else:
-            pprint.pprint(tls_socket.getpeercert())
+            #pprint.pprint(tls_socket.getpeercert())
             return HTTPConnection(self, tls_socket, caddr)
             
 

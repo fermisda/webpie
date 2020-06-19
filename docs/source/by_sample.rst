@@ -16,21 +16,21 @@ keep that for later.
 
     from webpie import WPApp, WPHandler		
 	
-    class MyHandler(WPHandler):                         # 1
+    class Greeter(WPHandler):                         # 1
 
-        def hello(self, request, relpath):              # 2
-            return "Hello, World!\n"                    # 3
+        def hello(self, request, relpath):            # 2
+            return "Hello, World!\n"                  # 3
 		
-    WPApp(MyHandler).run_server(8080)                   # 4
+    WPApp(Greeter).run_server(8080)                   # 4
 
 
-#1: We created class MyHandler, which will handle HTTP requests. In order to work with WebPie, it has to be a subclass of WPHandler class.
+#1 -- We created class Greeter, which will handle HTTP requests. In order to work with WebPie, it has to be a subclass of WPHandler class.
 
-#2: We defined one web method "hello", which will be called when a URL like http://host.org/hello is requested.
+#2 -- We defined one web method "hello", which will be called when a URL like http://host.org/hello is requested.
 
-#3: It will always return text "Hello, World!".
+#3 -- It will always return text "Hello, World!".
 
-#4: Finally, we create WebPie Application object and run it as an HTTP server listening on port 8080.
+#4 -- Finally, we create WebPie Application object and run it as an HTTP server listening on port 8080.
 
 Now we can test it:
 
@@ -41,8 +41,53 @@ Now we can test it:
     Hello world!
     $ 
 
-HTTP Server
------------
+WSGI Application
+----------------
+
+WebPie Application (WPApp) object can work as a callable WSGI function and therefore can be plugged into any
+web server framework which accepts WSGI functions. For example, here is how to run our "Hello World!" 
+server under uWSGI:
+
+.. code-block:: python
+
+    # hello_world_wsgi.py
+
+    from webpie import WPApp, WPHandler
+
+    class Greeter(WPHandler):                        
+
+        def hello(self, request, relpath):             
+            return "Hello, World!\n"                    
+
+    application = WPApp(Greeter)                      
+        
+.. code-block:: bash
+
+	$ uwsgi --http :8080 --wsgi-file hello_world_wsgi.py
+
+If you want to have the flexibility to run the same code as a stanadlone server or as a pluggable WSGI application,
+you can do this:
+
+.. code-block:: python
+
+    from webpie import WPApp, WPHandler
+
+    class Greeter(WPHandler):                        
+
+        def hello(self, request, relpath):             
+            return "Hello, World!\n"                    
+
+    application = WPApp(Greeter)      
+    if __name__ == "__main__":
+        # standalone
+        application.run_server(8080)
+    else:
+        # running as WSGI plug-in
+        pass
+        
+
+More on HTTP Server
+-------------------
 WebPie comes with its own HTTP/HTTPS server, which can be used to deploy a web service quicky without using some heavy-duty HTTP server
 machinery like Apache httpd or nginx.
 
@@ -75,21 +120,6 @@ HTTP Server is a standard Python ``threading.Thread`` object. It will listen on 
 HTTP request. Arguments ``max_connections`` and ``max_queued`` control how many requests will be processed simultaneously and
 how many will be waiting to be processed. If the load is too high and the queue gets full, all other requests will be rejected.
 
-If you do not want to control the server and want to use some reasonable defaults, you can simply do this:
-
-.. code-block:: python
-
-	from webpie import WPHandler, WPApp
-	import sys, time
-
-	class TimeHandler(WPHandler):
-    
-	    def time(self, relpath, **args):           
-	        return time.ctime(time.time())
-
-	WPApp(TimeHandler).run_server(8080)
-
-
 relpath
 -------
 
@@ -119,42 +149,6 @@ relpath is used by WebPie to pass the rest of the URI path after the head of the
     Hello wonderful/world/of/web/pie!
     $
     
-uWSGI
------
-
-WebPie Application (WPApp) object can work as a callable WSGI function and therefore can be plugged into any
-web server framework which accepts WSGI functions. For example, here is how to run our "Hello World!" 
-server under uWSGI:
-
-.. code-block:: python
-
-    # hello_world_wsgi.py
-
-    from webpie import WPApp, WPHandler
-
-    class MyHandler(WPHandler):                        
-
-        def hello(self, request, relpath):             
-            return "Hello, World!\n"                    
-
-    application = WPApp(MyHandler)                      # 1
-
-        
-#1: WebPie application object is callable as WSGI-compliant function
-
-.. code-block:: bash
-
-	$ uwsgi --http :8080 --wsgi-file hello_world_wsgi.py
-
-
-and try it:
-
-.. code-block:: bash
-
-	$ curl http://localhost:8080/hello
-	Hello world!
-	$ 
-
 URL Structure
 -------------
 Notice that MyHandler class has single method "hello" and it maps to the URL path "hello". This is general rule in WebPie - methods of handler classes map one to one to the elements of URI path. For example, we can add another method to our server called "time":

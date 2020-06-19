@@ -2,9 +2,9 @@
 
 from webpie import WPApp, WPHandler
 
-class MyHandler(WPHandler):                        
+class Greeter(WPHandler):                        
 
     def hello(self, request, relpath):             
         return "Hello, World!\n"                    
 
-application = WPApp(MyHandler)                      # 1
+application = Greeter(MyHandler)                      # 1

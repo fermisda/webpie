@@ -495,7 +495,7 @@ class WPApp(object):
         if static_location is None: static_location = "./static"
         self.StaticPath = static_path
         self.StaticLocation = static_location
-        print("App init: StaticLocation:", static_location)
+        #print("App init: StaticLocation:", static_location)
         self.StaticEnabled = enable_static and static_location
         
         self.RootClass = root_class

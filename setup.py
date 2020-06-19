@@ -22,7 +22,7 @@ setup(
     description = ("A set of useful tools built on top of standard Python threading module"),
     license = "BSD 3-clause",
     keywords = "web service, wsgi, web application",
-    url = "https://github.com/imandr/webpie",
+    url = "https://webpie.github.io/",
     packages=['webpie', 'samples', 'webpie/webob'],
     long_description=read('README.rst'),
     install_requires=["pythreader"],
