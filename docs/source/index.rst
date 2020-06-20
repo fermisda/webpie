@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-WebPie - web applications framework for Python
-==============================================
+WebPie Documentation
+====================
 
 .. image:: https://img.shields.io/pypi/l/webpie.svg
     :target: https://pypi.org/project/webpie/
@@ -17,76 +17,199 @@ WebPie - web applications framework for Python
 
 WebPie (pronounced: web-py) is a intuitive, simple yet powerful object-oriented web applications development framework for Python.
 
-Here is how WebPie says "Hello, World!"::
+Installation
+------------
 
-	# hello_world_wsgi.py
+You can install WebPie from PyPi:
+
+.. code-block:: bash
+
+	pip install webpie
 	
-	from webpie import WPApp, WPHandler
+Quick Start
+-----------
 
-	class HelloHandler(WPHandler):                      
+WebPie says Hello, World !
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	    def hello(self, request, relpath):           
-	        return "Hello, World!"                 
+Here is the WebPie "Hello, World!" application:
 
-	application = WPApp(HelloHandler)             
+.. code-block:: python
 
+    # hello_world.py
 
-And here is an alternative using one of popular frameworks::
+    from webpie import WPApp, WPHandler
 
-	from flask import Flask
-	app = Flask(__name__)
+    class HelloHandler(WPHandler):                      
 
-	@app.route('/')
-	def hello_world():
-	    return 'Hello, World!'
+        def hello(self, request, relpath):           
+            return "Hello, World!"                 
 
-In fact, with WebPie it can be even a bit shorter, but still readable, although not really object-oriented any more::
+    application = WPApp(HelloHandler)
+    application.run_server(8080)        
 
-    from webpie import WPApp
-	
-    def hello(request, relpath):    
-		return "Hello, World!"
-		
-    application = WPApp(hello)
-	
-The examples above stop at creating WPApp object, which is in fact a standard WSGI application. Now it has to be plugged into a HTTP
-server to become a web service. To do that, you can either use third-party HTTP server compatible with WSGI, such as Apache httpd with mod_wsgi
-or nginx/uWSGI. For example:
+Now you can run this script as a stand-alone web server:
+
+.. code-block:: shell
+
+    $ python hello_world.py &
+    [1] 34509
+    
+    $ curl http://localhost:8080/hello
+    Hello, World!
+
+WebPie Anatomy
+~~~~~~~~~~~~~~
+
+The "Hello, World!" sample illustrates the basic structure of a WebPie application. It consists of a Request Handler class and an Application object.
+The Request Handler (or Handler) class has to be a subclass of ``WPHandler`` and the application object is an object of WPApp class or its customized sublass.
+
+When the WepPie web server starts, it creates the WPApp object, which exists as long as the web server runs. 
+Then the App object creates new new Handler object for every request the server receives to process it. That is why the App object
+is constucted with the Handler class as its argument instead of an object of the Handler class.
+The Handler object is transient and short-lived - it is destroyed after processing the request. 
+Handler objects have reference to the persistent WPApp object and can use the latter to store some persistent context information.
+
+To be able to process requests, the Handler has to define one or more *web methods*. Most generally, a web method must look like this:
+
+.. code-block:: python
+
+    class MyHandler(WPHandler):
+    
+        def web_method(self, request, relpth, **args):
+            # ...
+            return Response(...)
+
+Without getting into too much details at this point,
+a web method receives the HTTP request parsed into WebOb Request object as its ``request`` argument and is suposed to return a WebOb Response
+object. There are some handy shortcuts, however. The web method does not always have to return the Response object. Instead, it can
+return many different things. As you saw in the samples above, it can also return just a string.
+There is some function inside WebPie which intelligently converts web method's return into a Response
+object.
+
+URL Mapping
+~~~~~~~~~~~
+
+Notice that the Hello World server responded to URI path ending with ``hello``, which happens to be the name of the ``HelloHandler`` web method. 
+This is how WebPie works - it maps URI path to a web method of a Handler. Here is a Handler with two web methods:
+
+.. code-block:: python
+
+    # clock.py
+
+    from webpie import WPApp, WPHandler                       
+    import time
+
+    class Clock(WPHandler):                                
+
+        def ctime(self, request, relpath):          
+            return "%s\n" % time.ctime()
+
+        def clock(self, request, relpath):          
+            return "%f\n" % time.time()
+
+    WPApp(Clock).run_server(8080)
+
+This web application will respond to 2 URIs:
+
+.. code-block:: shell
+
+    $ python clock.py &
+    [2] 35059
+
+    $ curl http://localhost:8081/clock
+    1592657444.597579
+
+    $ curl http://localhost:8081/ctime
+    Sat Jun 20 07:50:48 2020
+
+Handlers can be nested to be able to work with longer URI paths:
+
+.. code-block:: python
+
+    from webpie import WPApp, WPHandler                       
+    import time
+
+    class Clock(WPHandler):                                
+
+        def ctime(self, request, relpath):          
+            return "%s\n" % time.ctime()
+
+        def clock(self, request, relpath):          
+            return "%f\n" % time.time()
+
+    class Greeter(WPHandler):                                
+    
+        def hello(self, request, relpath, **args):           
+            return "Hello, World!\n"           
+            
+    class Top(WPHandler):
+    
+        def __init__(self, app):
+            WPHandler.__init__(self, request, app)
+            self.clock = Clock(request, app)
+            self.greet = Greeter(request, app)
+
+    WPApp(Top).run_server(8080)                         
+
+Notice that the ``Top`` Handler now has 2 sub-handlers members - ``clock`` and ``greeter``. These member names will map onto the request URI
+parts:
+
+.. code-block:: shell
+
+    $ curl http://localhost:8080/clock/ctime
+    Fri Jun 19 11:26:53 2020
+    
+    $ curl http://localhost:8080/greet/hello
+    Hello, World!
+    $
+
+As mentioned above, ``WPApp`` class implements standard WSGI interface, so any object of a ``WPApp`` subclass can be used anywhere a WSGI application
+can be used. Instead of running our app on its own, it can be plugged into a WSGI-compatibe HTTP server, such as uWSGI:
+
+.. code-block:: python
+
+    # clock.py
+
+    from webpie import WPApp, WPHandler
+
+    class Clock(WPHandler):                                
+
+        def ctime(self, request, relpath):          
+            return "%s\n" % time.ctime()
+
+        def clock(self, request, relpath):          
+            return "%f\n" % time.time()
+
+    application = WPApp(Clock)
 
 .. code-block:: bash
 
 	$ uwsgi --http :8080 --wsgi-file hello_world_wsgi.py
 
-A simpler way to fire up your application is to use the HTTP/HTTPS server, which comes with WebPie:
+And you can run the same code in both ways:
 
 .. code-block:: python
 
-	from webpie import WPApp, WPHandler
-	import time
+    from webpie import WPApp, WPHandler
 
-	class Clock(WPHandler):                      
+    class Clock(WPHandler):                                
 
-	    def time(self, request, relpath):           
-	        return time.ctime()                 
+        def ctime(self, request, relpath):          
+            return "%s\n" % time.ctime()
 
-	app = WPApp(Clock)
-	app.run_server(8080)         
+        def clock(self, request, relpath):          
+            return "%f\n" % time.time()
 
-WebPie main features
---------------------
-- Write your code in an intuitive way, as a set of classes, not a module with bunch of unrelated functions
-- URL structure maps one-to-one to the server code structure
-- Receive and process URI query arguments as method named arguments
-- Support for static contents
-- WebPie App is a standard WSGI application, so it can be plugged into any popular HTTP srever with WSGI support
-- WebPie comes with its own HTTP/HTTPS server, which can be used to run light weight web applications
-- Support for sessions
-- WebPie App object persists between requests, so it can be used to keep long-term context, database connections, etc.
-- WebPie helps you build multi-threaded web servrices easily
-- WebPie is `Jinja2 <https://palletsprojects.com/p/jinja>`_-friendly
-- WebPie comes with its own WebSockets server implementation module
-- Python 2.7 and 3.7-3.8 supported
-- WebPie uses `WebOb <https://webob.org>`_ to parse and represent the HTTP request
+    application = WPApp(Clock)
+    
+    if __name__ == "__main__":
+        # running stand-alone
+        application.run_server(8080)
+    else:
+        # imported module
+        pass
+
 
 
 More Details

@@ -5,8 +5,10 @@ import time
 
 class Clock(WPHandler):                                
 
-    def time(self, request, relpath):          
-        return time.ctime()
+    def ctime(self, request, relpath):          
+        return "%s\n" % time.ctime()
 
-app = WPApp(Clock)                             
-app.run_server(8081)
+    def clock(self, request, relpath):          
+        return "%f\n" % time.time()
+
+WPApp(Clock).run_server(8080)

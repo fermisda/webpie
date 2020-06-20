@@ -1,7 +1,8 @@
 Sample-by-sample Guide into WebPie
 ==================================
 
-This document demonstrates various features of WebPie using short code samples.
+This document demonstrates various features of WebPie using short code samples. 
+You can also `download <https://github.com/webpie/webpie/tree/master/samples>`_ the samples from GitHub.
 
 
 Hello World
