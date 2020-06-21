@@ -83,7 +83,7 @@ It does pretty much the same thing, but it turns the whole decorated web method 
 
 .. code-block:: python
 
-    from webpie import WPApp, WPHandler
+    from webpie import WPApp, WPHandler, app_synchronized
     
     class Handler(WPHandler):
     

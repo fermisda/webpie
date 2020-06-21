@@ -375,13 +375,13 @@ runs multiple threads, a thread per request, there is a possibility that the bum
 will be called by two threads at (almost) the same time and the responses to both
 requests will contain the same counter value.
 
-To help make the code thread safe, WebPie offers "atomic" decorator. It can be used to make any method of
+To help make the code thread safe, WebPie offers "app_synchronized" decorator. It can be used to make any method of
 a Handler or the App class atomic and thread safe. Here is how the previous example can be fixed:
 
 .. code-block:: python
 
     # time_count_thread_safe.py
-    from webpie import WPApp, WPHandler, atomic
+    from webpie import WPApp, WPHandler, app_synchronized
     import time
 
     class Handler(WPHandler):                                               
@@ -395,7 +395,7 @@ a Handler or the App class atomic and thread safe. Here is how the previous exam
             WPApp.__init__(self, handler_class)
             self.Counter = 0
     
-        @atomic
+        @app_synchronized
         def bump_counter(self):
             self.Counter += 1
             return self.Counter
