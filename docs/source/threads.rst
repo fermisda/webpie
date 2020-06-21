@@ -110,5 +110,5 @@ It does pretty much the same thing, but it turns the whole decorated web method 
 Not Enough ?
 ------------
 
-Because you have full control over the Application and Handler classes, you can build more sophysticated inter-thread synchronization
+Because you have full control over the Application and Handler classes, you can build more sophisticated inter-thread synchronization
 mechanisms to make your application more efficient.
