@@ -220,4 +220,5 @@ More Details
 
    by_sample
    uri_mapping
+   threads
 
