@@ -90,8 +90,8 @@ object.
 URL Mapping
 ~~~~~~~~~~~
 
-Notice that the Hello World server responded to URI path ending with ``hello``, which happens to be the name of the ``HelloHandler`` web method. 
-This is how WebPie works - it maps URI path to a web method of a Handler. Here is a Handler with two web methods:
+Notice that the Hello World server responded to URI path ending with ``hello``, which happens to be the name of the method of the ``HelloHandler`` class. 
+This is how WebPie works - basically, it maps URI path to a web method of a Handler. Here is a Handler with two web methods:
 
 .. code-block:: python
 
@@ -219,4 +219,5 @@ More Details
    :maxdepth: 2
 
    by_sample
+   uri_mapping
 
