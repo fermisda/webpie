@@ -216,7 +216,7 @@ More Details
 ------------
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    by_sample
    uri_mapping

@@ -1,12 +1,13 @@
 Building Threaded Applications
 ==============================
 
-Each HTTP request is handled by its own Handler object, created from scratch to process this request and destroyed
-after. Each request is parsed into its own WebOb Request object. Depending on the actual HTTP server implementation,
-this design allows to build multi-treaded web application. The persistent singleton WPApp object is shared by all
-the Handlers and can be used for synchronization between them and to keep common data.
+Each HTTP request is handled by its own Handler object, created from scratch to process this request and this request only and destroyed
+when it is done. Each incoming request is parsed into its own WebOb Request object owned by the Handler object. 
+The persistent singleton WPApp object is shared by all
+the Handlers and can be used for synchronization between them and to keep common data. Depending on the actual HTTP server implementation,
+this design allows to build multi-treaded web application. 
 
-WebPie provides some basic tools to build threaded web aplications.
+WebPie provides some basic tools to build threaded web applications.
 
 WPApp as a Context Manager
 --------------------------
@@ -41,6 +42,9 @@ critical section at the same time, the Handler can use the WPApp object as the c
             
     # allow up to 100 threads processing requests concurrently 
     App(Handler).run_server(8080, max_connections=100)      
+
+@app_synchronized Decorator
+---------------------------
 
 Another tool to achieve pretty much the same results is to use @app_synchronized decorator:
 
@@ -103,6 +107,8 @@ It does pretty much the same thing, but it turns the whole decorated web method 
     # allow up to 100 threads processing requests concurrently 
     App(Handler).run_server(8080, max_connections=100)      
                 
+Not Enough ?
+------------
 
 Because you have full control over the Application and Handler classes, you can build more sophysticated inter-thread synchronization
 mechanisms to make your application more efficient.
