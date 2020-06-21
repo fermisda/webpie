@@ -72,10 +72,10 @@ This handler will respond to URIs:
     /hello?a=b              # relpath="",       args={"a":"b"}
     /hi                     # error - web method not found
     /no_args                # relpath=""
-    /no_aggs?x=y            # error - the web method does not expect 
+    /no_args?x=y            # error - the web method does not expect 
                             #         any query arguments
-    /few_aggs/abc?x=y       # relpath = "abc",  x="y", b="yes"
-    /few_aggs?b=no          # relpath = "",     x=None, b="no"
+    /few_args/abc?x=y       # relpath = "abc",  x="y", b="yes"
+    /few_args?b=no          # relpath = "",     x=None, b="no"
     /down/say?what=hi       # relpath = "",     what="hi",      reply: "hi"
     /down/say?x=unused      # relpath = "",     what="hi",      reply: "hi"
     /down/say/hi            # relpath = "hi",   what="hello",   reply: "hi"
