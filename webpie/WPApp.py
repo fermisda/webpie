@@ -559,13 +559,13 @@ class WPApp(object):
         return Response(text, status = '500 Application Error')
 
     def static(self, relpath):
-        print("WPApp.static: relpath:", relpath)
+        #print("WPApp.static: relpath:", relpath)
         while ".." in relpath:
             relpath = relpath.replace("..",".")
         home = self.StaticLocation
-        print("WPApp.static: home:", home)
+        #print("WPApp.static: home:", home)
         path = os.path.join(home, relpath)
-        print ("static: path:", path)
+        #print ("static: path:", path)
         try:
             st_mode = os.stat(path).st_mode
             if not stat.S_ISREG(st_mode):
