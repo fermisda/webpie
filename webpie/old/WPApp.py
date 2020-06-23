@@ -199,14 +199,13 @@ class WPHandler:
         self.BeingDestroyed = False
         try:    self.AppURL = request.application_url
         except: self.AppURL = None
-        #self.RouteMap = []
+        self.RouteMap = []
         self._WebMethods = {}
-        if not self._Strict:
-            self.addMethod("wp.debug", self._debug__)
+        self.addWebMethod("wp.debug", self._debug__)
         
-    def addMethod(self, name, method):
+    def addWebMethod(self, name, method):
         self._WebMethods[name] = method
-
+        
     def _app_lock(self):
         return self.App._app_lock()
 
@@ -214,7 +213,7 @@ class WPHandler:
         # override me
         pass
 
-    def ____old___addHandler(self, path, handler):
+    def addHandler(self, path, handler):
         #
         # path - fnmatch string
         # handler - either WPHandler object or a web method function
@@ -275,48 +274,70 @@ class WPHandler:
         
                 
     def walk_down(self, request, path, path_down, args):
+        
         self.Path = path or "/"
 
         while path_down and not path_down[0]:
             path_down = path_down[1:]
-            
-        method = None
-        if callable(self):
-            method = self
-        else:
-            name = path_down.pop(0)
-            
-            if name in self._WebMethods:
-                method = self._WebMethods[name]
-                if isinstance(method, (tuple, str, bytes, Response)):
-                    return method           # literal
-                
-            elif not name.startswith("_") and hasattr(self, name):
-                handler = getattr(self, name)
+    
+        if not path_down:
+            if callable(self):
+                return self(request, "", **args)
+            else:
+                return HTTPNotFound("Invalid path %s" % (request.path_info,))
+        
+        top_path_item = path_down[0]
+        
+        # Try methods and members
+        if top_path_item in self._WebMethods or (not top_path_item.startswith("_") and hasattr(self, top_path_item)):
+            member = self._WebMethods.get(top_path_item) or getattr(self, top_path_item)
+            if isinstance(member, WPHandler):
+                child = member
+                return child.walk_down(request, path + "/" + top_path_item, path_down[1:], args)
+
+            #
+            # methods with names starting with underscore are not allowed
+            #
+            elif callable(member):
+                method_name = top_path_item
+                method = member
+                allowed = False
+                if self._Strict:
+                    allowed = (
+                            (self._MethodNames is not None 
+                                    and method_name in self._MethodNames)
+                        or
+                            (hasattr(method, "__doc__") 
+                                    and method.__doc__ == _WebMethodSignature)
+                        )
+                else:
+                    allowed = self._MethodNames is None or method_name in self._MethodNames
+                if allowed:
+                    relpath = "/".join(path_down[1:])
+                    return method(request, relpath, **args)
+                else:
+                    return HTTPForbidden(request.path_info)
+
+        path_down_str = "/".join(path_down)
+        # Try route map
+        for pattern, handler in self.RouteMap:
+            if fnmatch.fnmatch(path_down_str, pattern):
                 
                 if isinstance(handler, WPHandler):
-                    return handler.walk_down(request, path + "/" + name, path_down, args)
+                    return handler.walk_down(request, path, path_down, args)
+                elif isinstance(handler, (tuple, str, bytes, Response)):
+                    return handler
+                else:
+                    # assume callable
+                    return handler(request, path_down_str, **args)
 
-                if callable(handler):
-                    allowed = True
-                    if self._Strict:
-                        allowed = (
-                                (self._MethodNames is not None 
-                                        and name in self._MethodNames)
-                            or
-                                (hasattr(method, "__doc__") 
-                                        and method.__doc__ == _WebMethodSignature)
-                            )
-                    if not allowed:
-                        return HTTPForbidden(request.path_info)
-                    method = handler
-                    
-        if method is None:
-            return HTTPNotFound("Invalid path %s" % (request.path_info,))
-            
-        relpath = "/".join(path_down)
-        return method(request, relpath, **args)                    
+        # Try callable
+        if callable(self):
+            return self(request, path_down_str, **args)
         
+        # ... otherwise ...
+        return HTTPNotFound("Invalid path %s" % (request.path_info,))
+                    
         
     def _checkPermissions(self, x):
         #self.apacheLog("doc: %s" % (x.__doc__,))
@@ -433,12 +454,13 @@ class WPHandler:
         
     #
     # This web methods can be used for debugging
-    # call it as "../wp.debug"
     #
 
     def _debug__(self, req, relpath, **args):
         lines = (
-            ["request.environ:"]
+            [
+                "request.environ:"
+            ]
             + ["  %s = %s" % (k, repr(v)) for k, v in sorted(req.environ.items())]
             + ["relpath: %s" % (relpath or "")]
             + ["args:"]
