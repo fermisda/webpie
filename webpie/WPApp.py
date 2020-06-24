@@ -609,12 +609,20 @@ class WPApp(object):
                     self.StaticLocation = self.ScriptHome + "/" + self.StaticLocation
                     #print "static location:", self.StaticLocation
             self.Initialized = True
+
+        resp = None
             
-        if self.StaticEnabled and path.startswith(self.StaticPath+"/"):
-            resp = self.static(path[len(self.StaticPath)+1:])
-        elif self.DisableRobots and path.endswith("/robots.txt"):
+        if self.StaticEnabled:
+            static_prefix = self.StaticPath
+            if not static_path.endswith("/"):
+                static_prefix = static_prefix + "/"
+            if path.startswith(static_prefix):
+                resp = self.static(path[len(static_prefix):])
+
+        if response is None and (self.DisableRobots and path.endswith("/robots.txt")):
             resp = Response("User-agent: *\nDisallow: /\n", content_type = "text/plain")
-        else:
+
+        if resp is None:
             root = self.RootClass(req, self)
             try:
                 return root.wsgi_call(environ, start_response)
