@@ -438,20 +438,21 @@ Static Content
 --------------
 
 Sometimes the application needs to be able to deliver static content like HTML documents, 
-CSS stylesheets, JavaScript code.
-WebPie App can be configured to serve static file from certain directory in the file system.
-By default, for security reasons, this feature is disabled. To enable it, call the WPApp constructor
-with "static_location" argument pointing to the directory where your static content is. "static_path"
-defines the top of the URI path to be mapped to that directory.
+CSS stylesheets, JavaScript code. WebPie includes a special WPStaticHandler, which can be used
+to expose static files through the web server.
 
 .. code-block:: python
 
     # static_server.py
 
-    from webpie import WPApp, WPHandler
+    from webpie import WPApp, WPHandler, WPStaticHandler
     import time
 
-    class TimeHandler(WPHandler):
+    class Main(WPHandler):
+    
+        def __init__(self, request, app):
+            WPHandler.__init__(self, request, app)
+            self.static = WPStaticHandler(request, app, root="./static_content")
     
         def time(self, request, relpath, **args):
             return """
@@ -465,11 +466,85 @@ defines the top of the URI path to be mapped to that directory.
                 </html>
             """ % (time.ctime(time.time()),)
 
-    WPApp(TimeHandler, 
-        static_location="./static_content", 
-        static_path="/static"
-        ).run_server(8080)
+    WPApp(Main).run_server(8080)
+
+When ``WPStaticHandler`` processes the request, it appends the ``relpath`` to the path specified with its ``root`` parameter and uses that
+as the path to the file in local file system to send as the response. Notice that the WPStaticHandler is included in the top Handler ``Main`` 
+as subhandler named "static". So any request for URI ``/static/<relpath>`` will be handled by the WPStaticHandler and it will respond
+with contents of the file ``./static_content/<relpath>``.
+
+addHandler() and robots
+-----------------------
+
+Sometimes you do not want your server to be crawled by search engines. The way you do it, you build your server in such a way that
+it responds to URI ``/robots.txt`` with something like this:
+
+.. code-block::
+
+    User-agent: *
+    Disallow: /
+
+It is impossible to have a Handler's method with name "robots.txt". We can not write something like this, can we ?:
+
+.. code-block:: python
+
+    class Handler(WPHandler):
     
+        def robots.txt(...):
+            ...
+
+
+
+
+So in order to make your server repond to URI like ``/robots.txt``, you
+have to either make your handler callable, or use ``WPHandler.addHandler()`` method:
+
+.. code-block:: python
+
+    # robots.py
+
+    from webpie import WPApp, WPHandler, Response
+
+    robots_response = """User-agent: *
+    Disallow: /
+    """
+
+    class RobotsHandler(WPHandler):
+    
+        def __call__(self, request, relpath, **args):
+            return robots_response, "text/plain"
+
+    class MyHandler(WPHandler):             
+    
+        def __init__(self, *params):
+            WPHandler.__init__(self, *params)
+            self.addHandler("robots1.txt", RobotsHandler(*params))                  # as a handler
+            self.addHandler("robots2.txt", self.robots)                             # as function
+            self.addHandler("robots3.txt", robots_response)                         # as text
+            self.addHandler("robots3.txt", (robots_response, "text/plain"))         # as tuple
+            self.addHandler("robots.txt",                                           # as Response object
+                    Response(robots_response, content_type="text/plain"))
+        
+        def robots(self, request, relpath, **args):                         
+            return robots_response, "text/plain"                          
+
+    WPApp(MyHandler).run_server(8080)
+
+.. code-block:: shell
+
+    $ curl http://localhost:8080/robots.txt
+    User-agent: *
+    Disallow: /
+
+
+    
+This sample illustrates various ways ``addHandler`` method can be used. You can pass many different things as the "handler":
+
+    * WPHandler object
+    * a callable
+    * a text, which will become response body
+    * a tuple with response body and MIME contents type
+    * a WebOb Response object
 
 Session Management
 ------------------

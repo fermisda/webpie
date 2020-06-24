@@ -1,9 +1,13 @@
 # static_server.py
 
-from webpie import WPApp, WPHandler
+from webpie import WPApp, WPHandler, WPStaticHandler
 import time
 
-class TimeHandler(WPHandler):
+class Static(WPHandler):
+    
+    def __init__(self, request, app):
+        WPHandler.__init__(self, request, app)
+        self.static = WPStaticHandler(request, app, "./static_content")
     
     def time(self, request, relpath, **args):
         return """
@@ -17,7 +21,4 @@ class TimeHandler(WPHandler):
             </html>
         """ % (time.ctime(time.time()),)
 
-WPApp(TimeHandler, 
-    static_location="./static_content", 
-    static_path="/static"
-    ).run_server(8080)
+WPApp(Static).run_server(8080)

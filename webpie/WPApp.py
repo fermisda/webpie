@@ -27,6 +27,18 @@ except ImportError:
 
 _WebMethodSignature = "__WebPie:webmethod__"
 
+_MIME_TYPES_BASE = {
+        "gif":   "image/gif",
+        "jpg":   "image/jpeg",
+        "jpeg":   "image/jpeg",
+        "js":   "text/javascript",
+        "html":   "text/html",
+        "txt":   "text/plain",
+        "css":  "text/css"
+    }
+
+
+
 #
 # Decorators
 #
@@ -202,9 +214,9 @@ class WPHandler:
         #self.RouteMap = []
         self._WebMethods = {}
         if not self._Strict:
-            self.addMethod("wp.debug", self._debug__)
+            self.addHandler("wp.debug", self._debug__)
         
-    def addMethod(self, name, method):
+    def addHandler(self, name, method):
         self._WebMethods[name] = method
 
     def _app_lock(self):
@@ -214,15 +226,6 @@ class WPHandler:
         # override me
         pass
 
-    def ____old___addHandler(self, path, handler):
-        #
-        # path - fnmatch string
-        # handler - either WPHandler object or a web method function
-        #
-        if not (callable(handler) or isinstance(handler, (Response, tuple, str, bytes, WPHandler))):
-            raise ValueError("Invalid handler type: %s" % (type(handler),))
-        self.RouteMap.append((path, handler))
-        
     def wsgi_call(self, environ, start_response):
         # path_to = '/'
         path = environ.get('PATH_INFO', '')
@@ -283,7 +286,7 @@ class WPHandler:
         method = None
         if callable(self):
             method = self
-        else:
+        elif path_down:
             name = path_down.pop(0)
             
             if name in self._WebMethods:
@@ -446,24 +449,58 @@ class WPHandler:
         )
         return "\n".join(lines) + "\n", "text/plain"
         
+class WPStaticHandler(WPHandler):
+    
+    def __init__(self, request, app, root="static", default_file="index.html"):
+        WPHandler.__init__(self, request, app)
+        self.DefaultFile = default_file
+        if not (root.startswith(".") or root.startswith("/")):
+            root = self.App.ScriptHome + "/" + root
+        self.Root = root
+
+    def __call__(self, request, relpath, **args):
+        
+        if ".." in relpath:
+            return Response("Forbidden", status=403)
+            
+        home = self.Root
+        path = os.path.join(home, relpath)
+        try:
+            st_mode = os.stat(path).st_mode
+        except:
+            return Response("Not found", status=404)
+
+
+        if stat.S_ISDIR(st_mode) and self.DefaultFile:
+            path = os.path.join(path, self.DefaultFile)
+            try:
+                st_mode = os.stat(path).st_mode
+            except:
+                return Response("Not found", status=404)
+            
+        if not stat.S_ISREG(st_mode):
+            #print "not a regular file"
+            return Response("Not found", status=404)
+
+        ext = path.rsplit('.',1)[-1]
+        mime_type = _MIME_TYPES_BASE.get(ext, "text/html")
+
+        def read_iter(f):
+            while True:
+                data = f.read(100000)
+                if not data:    break
+                yield data
+
+        return Response(app_iter = read_iter(open(path, "rb")),
+            content_type = mime_type)
+
 class WPApp(object):
 
     Version = "Undefined"
 
-    MIME_TYPES_BASE = {
-        "gif":   "image/gif",
-        "jpg":   "image/jpeg",
-        "jpeg":   "image/jpeg",
-        "js":   "text/javascript",
-        "html":   "text/html",
-        "txt":   "text/plain",
-        "css":  "text/css"
-    }
-
     def __init__(self, root_class, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix=None,
-            disable_robots=True):
+            prefix=None, replace_prefix=None):
         if not isinstance(root_class, type) and callable(root_class):
             # if it's in fact a function, use LambdaHandlerFactory to wrap 
             # the function into a LambdaHandler
@@ -481,7 +518,6 @@ class WPApp(object):
         self._AppLock = RLock()
         self.ScriptHome = None
         self.Initialized = False
-        self.DisableRobots = disable_robots
         self.Prefix = prefix
         self.ReplacePrefix = replace_prefix
 
@@ -536,6 +572,8 @@ class WPApp(object):
         #print exc_text
         return Response(text, status = '500 Application Error')
 
+
+    # ----- deprecated. Use WPStaticHandler -------
     def static(self, relpath):
         #print("WPApp.static: relpath:", relpath)
         while ".." in relpath:
@@ -548,9 +586,8 @@ class WPApp(object):
             st_mode = os.stat(path).st_mode
             if not stat.S_ISREG(st_mode):
                 #print "not a regular file"
-                raise ValueError("Not regular file")
+                return Response("Not found", status=404)
         except:
-            raise
             return Response("Not found", status=404)
 
         ext = path.rsplit('.',1)[-1]
@@ -604,23 +641,18 @@ class WPApp(object):
             self.Script = environ.get('SCRIPT_FILENAME', 
                         os.environ.get('UWSGI_SCRIPT_FILENAME'))
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
-            if self.StaticEnabled:
-                if not self.StaticLocation[0] in ('.', '/'):
-                    self.StaticLocation = self.ScriptHome + "/" + self.StaticLocation
-                    #print "static location:", self.StaticLocation
             self.Initialized = True
 
         resp = None
             
+        # ----- deprecated. Use WPStaticHandler -------
         if self.StaticEnabled:
             static_prefix = self.StaticPath
-            if not static_path.endswith("/"):
+            if not static_prefix.endswith("/"):
                 static_prefix = static_prefix + "/"
             if path.startswith(static_prefix):
+                print("IMPORTANT: static contents handling by the WPApp is deprected. Please use WPStaticHandler instead.")
                 resp = self.static(path[len(static_prefix):])
-
-        if response is None and (self.DisableRobots and path.endswith("/robots.txt")):
-            resp = Response("User-agent: *\nDisallow: /\n", content_type = "text/plain")
 
         if resp is None:
             root = self.RootClass(req, self)

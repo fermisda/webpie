@@ -1,3 +1,8 @@
+h1 {
+    color: #006;
+    font-family: "Source Code Pro", "Menlo", monospace;
+}
+
 p.time {
     font-family: verdana, sans-serif;
     font-weight: bold;

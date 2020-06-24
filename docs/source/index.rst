@@ -210,15 +210,13 @@ And you can run the same code in both ways:
         # imported module
         pass
 
-
-
 More Details
-------------
+~~~~~~~~~~~~
+
 
 .. toctree::
-   :maxdepth: 1
 
-   by_sample
-   uri_mapping
-   threads
-
+    by_sample
+    threads
+    uri_mapping
+    web_method_details
