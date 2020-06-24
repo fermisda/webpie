@@ -27,9 +27,9 @@ URI query arguments are parsed into the ``**args`` key/value portion of the meth
 
 A web method is supposed to return a `WebOb <https://webob.org/>`_  `Response <https://docs.pylonsproject.org/projects/webob/en/stable/reference.html#response>`_ object.
 WebPie re-exports WebOb's ``Response`` class, so you can import it from webpie module.
-Strictly for convenience, a web method can also return its output not only as a ``Response`` object, but also in many different ways, 
-and the WebPie will convert the output into the Response object.
-Here are some possibilities and how they are interpreted:
+For convenience, a web method does not always have to create and return a ``Response`` object. 
+WebPie framework accepts web method's output in many different formats and converts it into a Response object internally.
+Here are some possibilities and how they are interpreted and converted into a Response:
 
 
 ====================================== =========================== ==================================== ==================================================================
@@ -38,9 +38,11 @@ return types                           interpretation              example      
 Response object                                                    Response("OK")                       same - Response("OK")
 str/bytes                              response body               "hello world"                        Response("hello world")
 str/bytes, str                         body, content type          "OK", "text/plain"                   Response("OK", content_type="text/plain")
-str/bytes, int                         body, status.               "Error", 500                         Response("Error", status_code=500)
+str/bytes, int                         body, status                "Error", 500                         Response("Error", status_code=500)
 str/bytes, int, str                    body, status, content type  "Error", 500, "text/plain"           Response("Error", status_code=500, content_type="text/plain")
 str/bytes, dict                        body, headers               "OK", {"Content-Type":"text/plain"}  Response("OK", headers={"Content-Type":"text/plain"})
+str/bytes, int, dict                   body, status, headers       "OK", 200,                           Response("OK", status_code=200, 
+                                                                   {"Content-Type":"text/plain"}        headers={"Content-Type":"text/plain"})
 list                                   body iterator               ["Hello","world"]                    Response(app_iter=["Hello","world"])
 iterable                               body iterator               (x for x in ["hi","there"])          Response(app_iter=(x for x in ["hi","there"]))
 iterable, str                          body iterator, content type (x for x in "hello"), "text/plain"   Response(app_iter=(x for x in "hello"), content_type="text/plain")
