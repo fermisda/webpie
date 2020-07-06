@@ -1300,7 +1300,8 @@ class Response(object):
         if self.conditional_response:
             return self.conditional_response_app(environ, start_response)
 
-        headerlist = self._abs_headerlist(environ)
+        #headerlist = self._abs_headerlist(environ)         # -- IVM    - do not convert relative URL to absolute
+        headerlist = self._headerlist                       # ++ IVM    - do not convert relative URL to absolute
 
         start_response(self.status, headerlist)
         if environ['REQUEST_METHOD'] == 'HEAD':

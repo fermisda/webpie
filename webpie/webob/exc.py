@@ -530,7 +530,7 @@ ${html_comment}''')
             if req.environ.get('QUERY_STRING'):
                 url += '?' + req.environ['QUERY_STRING']
             self.location = url
-        self.location = urlparse.urljoin(req.path_url, self.location)
+        #self.location = urlparse.urljoin(req.path_url, self.location)  -- IVM - do not convert relative URL to absolute
         return super(_HTTPMove, self).__call__(
             environ, start_response)
 

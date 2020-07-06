@@ -1,7 +1,7 @@
-import fnmatch, traceback, sys, select, time, os.path, stat, pprint
+import fnmatch, traceback, sys, time, os.path, stat, pprint, re
 from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue
-from .WebPieApp import Response
+from webpie import Response
 
 from .py3 import PY2, PY3, to_str, to_bytes
 Debug = False
@@ -27,7 +27,7 @@ class BodyFile(object):
             if not out: self.Sock = None
         return out
         
-    MAXMSG = 100000
+    MAXMSG = 8192
     
     def read(self, N = None):
         #print ("read({})".format(N))
@@ -49,7 +49,124 @@ class BodyFile(object):
             self.Remaining -= len(out)
         #print ("returning:[{}]".format(out))
         return out
+
+class HTTPHeader(object):
+
+    def __init__(self):
+        self.Headline = None
+        self.StatusCode = None
+        self.StatusMessage = ""
+        self.Method = None
+        self.URI = None
+        self.Path = None
+        self.Query = ""
+        self.OriginalURI = None
+        self.Headers = {}
+        self.Raw = b""
+        self.Buffer = b""
+        self.Complete = False
+        
+    def __str__(self):
+        return "HTTPHeader(headline='%s', status=%s)" % (self.Headline, self.StatusCode)
+        
+    __repr__ = __str__
+
+    def recv(self, sock):
+        received = eof = False
+        body = b''
+        while not received:       # shutdown() will set it to None
+            try:    data = sock.recv(1024)
+            except: data = b''
+            if data:
+                received, body = self.consume(data)
+            else:
+                eof = True
+        return received, body
+        
+    def replaceURI(self, uri):
+        self.URI = uri
+
+    def is_server(self):
+        return self.StatusCode is not None
+
+    def is_client(self):
+        return self.Method is not None
+
+    def is_final(self):
+        return self.is_server() and self.StatusCode//100 != 1 or self.is_client()
+
+    EOH_RE = re.compile(b"\r?\n\r?\n")
+
+    def consume(self, inp):
+        #print(self, ".consume(): inp:", inp)
+        header_buffer = self.Buffer + inp
+        match = self.EOH_RE.search(header_buffer)
+        if not match:   
+            self.Buffer = header_buffer
+            return False, b''
+        i1, i2 = match.span()            
+        self.Complete = True
+        self.Raw = header = header_buffer[:i1]
+        rest = header_buffer[i2:]
+        headers = {}
+        header = to_str(header)
+        lines = [l.strip() for l in header.split("\n")]
+        if lines:
+            self.Headline = headline = lines[0]
             
+            words = headline.split(" ", 2)
+            #print ("HTTPHeader: headline:", headline, "    words:", words)
+            if words[0].lower().startswith("http/"):
+                self.StatusCode = int(words[1])
+                self.StatusMessage = words[2]
+                self.Protocol = words[0].upper()
+            else:
+                self.Method = words[0].upper()
+                self.Protocol = words[2].upper()
+                self.Path = self.URI = self.OriginalURI = uri = words[1]
+                if '?' in uri:
+                    # detach query part
+                    self.Path, self.Query = uri.split("?", 1)
+                    
+            for l in lines[1:]:
+                if not l:   continue
+                try:   
+                    h, b = tuple(l.split(':', 1))
+                    headers[h.strip()] = b.strip()
+                except: pass
+            self.Headers = headers
+        self.Buffer = b""
+        return True, rest
+
+    def removeKeepAlive(self):
+        if "Connection" in self.Headers:
+            self.Headers["Connection"] = "close"
+
+    def forceConnectionClose(self):
+        self.Headers["Connection"] = "close"
+
+    def headersAsText(self):
+        headers = []
+        for k, v in self.Headers.items():
+            if isinstance(v, list):
+                for vv in v:
+                    headers.append("%s: %s" % (k, vv))
+            else:
+                headers.append("%s: %s" % (k, v))
+        return "\r\n".join(headers) + "\r\n"
+
+    def headline(self, original=False):
+        if self.is_client():
+            return "%s %s %s" % (self.Method, self.OriginalURI if original else self.URI, self.Protocol)
+        else:
+            return "%s %s %s" % (self.Protocol, self.StatusCode, self.StatusMessage)
+
+    def as_text(self, original=False):
+        return "%s\r\n%s" % (self.headline(original), self.headersAsText())
+
+    def as_bytes(self, original=False):
+        return to_bytes(self.as_text(original))
+
             
 class HTTPConnection(Task):
 
@@ -60,100 +177,15 @@ class HTTPConnection(Task):
         self.Server = server
         self.CAddr = caddr
         self.CSock = csock
-        self.ReadClosed = False
-        self.RequestHeadline = None
-        self.RequestReceived = False
-        self.RequestBuffer = ""
         self.Body = []
-        self.Headers = []
-        self.HeadersDict = {}
-        self.URL = None
-        self.RequestMethod = None
-        self.QueryString = ""
-        self.OutIterable = None
         self.OutBuffer = ""
-        self.OutputEnabled = False
-        self.BodyLength = None
-        self.BytesSent = 0
         self.ResponseStatus = None
-        self.OriginalPathInfo = self.PathInfo = None
-        self.ValidRequest = False
         self.Started = None
         
     def debug(self, msg):
         if Debug:
             print (msg)
 
-    def parseRequest(self):
-        #print("requestReceived:[%s]" % (self.RequestBuffer,))
-        # parse the request
-        lines = self.RequestBuffer.split('\n')
-        lines = [l.strip() for l in lines if l.strip()]
-        if not lines:
-            return False
-        self.RequestHeadline = lines[0].strip()
-        words = self.RequestHeadline.split()
-        #self.debug("Request: %s" % (words,))
-        if len(words) != 3:
-            return False
-        self.RequestMethod = words[0].upper()
-        self.RequestProtocol = words[2]
-        self.URL = words[1]
-        uwords = self.URL.split('?',1)
-        self.OriginalPathInfo = request_path = uwords[0]
-        if not self.Server.urlMatch(request_path):
-            return False
-        self.PathInfo = self.Server.rewritePath(request_path)
-        if len(uwords) > 1: self.QueryString = uwords[1]
-        #ignore HTTP protocol
-        for h in lines[1:]:
-            words = h.split(':',1)
-            name = words[0].strip()
-            value = ''
-            if len(words) > 1:
-                value = words[1].strip()
-            if name:
-                self.Headers.append((name, value))
-                self.HeadersDict[name] = value
-        return True
-        
-    def getHeader(self, header, default = None):
-        # case-insensitive version of dictionary lookup
-        h = header.lower()
-        for k, v in self.HeadersDict.items():
-            if k.lower() == h:
-                return v
-        return default
-        
-    def addToRequest(self, data):
-        #print("Add to request:", data)
-        self.RequestBuffer += data
-        inx_nn = self.RequestBuffer.find('\n\n')
-        inx_rnrn = self.RequestBuffer.find('\r\n\r\n')
-        if inx_nn < 0:
-            inx = inx_rnrn
-            n = 4
-        elif inx_rnrn < 0:
-            inx = inx_nn
-            n = 2
-        elif inx_nn < inx_rnrn:
-            inx = inx_nn
-            n = 2
-        else:
-            inx = inx_rnrn
-            n = 4
-        #print ("addToRequest: inx={}, n={}".format(inx, n))
-        if inx < 0:
-            return False        # request not received yet
-            
-        rest = self.RequestBuffer[inx+n:]
-        self.RequestBuffer = self.RequestBuffer[:inx]
-        self.ValidRequest = self.parseRequest()
-        #print("rest:[{}]".format(rest))
-        if self.ValidRequest and rest:    
-            self.addToBody(rest)
-        return True                     # request received, even if it is invalid
-            
     def addToBody(self, data):
         if PY3:   data = to_bytes(data)
         #print ("addToBody:", data)
@@ -178,25 +210,26 @@ class HTTPConnection(Task):
                         out[k] = v
         return out
                 
-    def processRequest(self):        
+    def processRequest(self, request):        
         #self.debug("processRequest()")
+
         env = dict(
-            REQUEST_METHOD = self.RequestMethod.upper(),
-            PATH_INFO = self.PathInfo,
+            REQUEST_METHOD = request.Method.upper(),
+            PATH_INFO = request.Path,
             SCRIPT_NAME = "",
-            SERVER_PROTOCOL = self.RequestProtocol,
-            QUERY_STRING = self.QueryString
+            SERVER_PROTOCOL = request.Protocol,
+            QUERY_STRING = request.Query
         )
         
-        if self.HeadersDict.get("Expect") == "100-continue":
-            self.CSock.send(b'HTTP/1.1 100 Continue\n\n')
+        if request.Headers.get("Expect") == "100-continue":
+            self.CSock.sendall(b'HTTP/1.1 100 Continue\n\n')
                 
         env["wsgi.url_scheme"] = "http"
-        env["query_dict"] = self.parseQuery(self.QueryString)
+        env["query_dict"] = self.parseQuery(request.Query)
         
         #print ("processRequest: env={}".format(env))
-        
-        for h, v in self.HeadersDict.items():
+        body_length = None
+        for h, v in request.Headers.items():
             h = h.lower()
             if h == "content-type": env["CONTENT_TYPE"] = v
             elif h == "host":
@@ -206,129 +239,57 @@ class HTTPConnection(Task):
                 env["SERVER_NAME"] = words[0]
                 env["SERVER_PORT"] = words[1]
             elif h == "content-length": 
-                env["CONTENT_LENGTH"] = self.BodyLength = int(v)
+                env["CONTENT_LENGTH"] = body_length = int(v)
             else:
                 env["HTTP_%s" % (h.upper().replace("-","_"),)] = v
 
-        env["wsgi.input"] = BodyFile(self.Body, self.CSock, self.BodyLength)
+        env["wsgi.input"] = BodyFile(self.Body, self.CSock, body_length)
         
         
         try:
-            self.OutIterable = self.Server.wsgi_app(env, self.start_response)    
+            out = self.Server.wsgi_app(env, self.start_response)    
         except:
             self.start_response("500 Error", 
                             [("Content-Type","text/plain")])
             self.OutBuffer = error = traceback.format_exc()
             self.Server.log_error(self.CAddr, error)
-        self.OutputEnabled = True
-        #self.debug("registering for writing: %s" % (self.CSock.fileno(),))    
+        
+        
+        if self.OutBuffer:      # from start_response
+            self.CSock.sendall(to_bytes(self.OutBuffer))
+            
+        byte_count = 0
+
+        for line in out:
+            if PY3: line = to_bytes(line)
+            self.CSock.sendall(line)
+            byte_count += len(line)
+            
+        self.Server.log(self.CAddr, request.Method, request.URI, self.ResponseStatus, byte_count)
 
     def start_response(self, status, headers):
-        #print("start_response({}, {})".format(status, headers))
         self.ResponseStatus = status.split()[0]
         out = ["HTTP/1.1 " + status]
         for h,v in headers:
-            out.append("{}: {}".format(h, v))
-        self.OutBuffer = "\n".join(out) + "\n\n"
-        #print("OutBuffer: [{}]".format(self.OutBuffer))
+            if h != "Connection":
+                out.append(f"{h}: {v}")
+        out.append("Connection: close")     # can not handle keep-alive
+        self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
         
-    def doClientRead(self):
-        if self.ReadClosed:
-            return
-
-        try:    
-            data = self.CSock.recv(self.MAXMSG)
-            if PY3: data = data.decode("utf-8")
-        except: 
-            data = ""
-        
-        #print("data:[{}]".format(data))
-
-        request_just_received = False
-    
-        if data:
-            if not self.RequestReceived:
-                self.RequestReceived = request_just_received = self.addToRequest(data)
-            else:
-                self.addToBody(data)
-        else:
-            self.ReadClosed = True
-            
-        if request_just_received:
-            if self.ValidRequest:
-                self.processRequest()
-            else:
-                self.shutdown("Invalid request")
-
-        if self.ReadClosed and not self.RequestReceived:
-            self.shutdown("EOF while reading request")
-                    
-    def doWrite(self):
-        #print ("doWrite: outbuffer:", len(self.OutBuffer))
-        line = None
-        #print ("doWrite: buffer: {}, iterable: {}".format(self.OutBuffer, self.OutIterable))
-        if self.OutBuffer:
-            line = self.OutBuffer
-            self.OutBuffer = None
-        elif isinstance(self.OutIterable, list):
-            if self.OutIterable:
-                line = self.OutIterable[0]
-                self.OutIterable = self.OutIterable[1:]
-            else: 
-                self.OutIterable = None
-                #print("OutIterable removed")
-        elif self.OutIterable is not None:
-            try:    
-                line = next(self.OutIterable)
-            except StopIteration:
-                self.OutIterable = None
-                #print("OutIterable removed")
-        if line is not None:
-            try:
-                if PY3:
-                    line = to_bytes(line)
-                sent = self.CSock.send(line)
-            except: 
-                sent = 0
-            self.BytesSent += sent
-            if not sent:
-                #self.debug("write socket closed")
-                self.shutdown("write socket closed")
-                return
-            else:
-                line = line[sent:]
-                self.OutBuffer = line or None
-        
-    def shutdown(self, message=None):
-            self.Server.log(self.CAddr, self.RequestMethod, self.URL, self.ResponseStatus, self.BytesSent)
-            self.debug("shutdown: reason=%s" % (message or "",))
-            if self.CSock != None:
-                self.debug("closing client socket")
-                try:    
-                    self.CSock.shutdown(SHUT_RDWR)
-                    self.CSock.close()
-                except:
-                    pass
-                self.CSock = None
-            if self.Server is not None:
-                self.Server.connectionClosed(self)
-                self.Server = None
-            
     def run(self):
         self.Started = time.time()
-        while self.CSock is not None:       # shutdown() will set it to None
-            rlist = [] if self.ReadClosed else [self.CSock]
-            wlist = [self.CSock] if self.OutputEnabled else []
-            rlist, wlist, exlist = select.select(rlist, wlist, [], 10.0)
-            if self.CSock in rlist:
-                self.doClientRead()
-            if self.CSock in wlist:
-                self.doWrite()
-            if (self.OutputEnabled and not self.OutBuffer and self.OutIterable is None):
-                self.shutdown("Done successfully") # noting else to send
-            elif (time.time() > self.Started + 10.0 and not self.RequestReceived):
-                self.shutdown("Timeout while reading request from the client")     
-                
+        request = HTTPHeader()
+        request_received, body = request.recv(self.CSock)
+        
+        if not request_received or not request.is_client():
+            # header not received - end
+            self.CSock.close()
+            return
+            
+        if body:
+            self.addToBody(body)
+        self.processRequest(request)
+
 class HTTPServer(PyThread):
 
     MIME_TYPES_BASE = {
@@ -422,38 +383,6 @@ class HTTPServer(PyThread):
         return HTTPConnection(self, csock, caddr)
 
                 
-    def isStaticURI(self, uri):
-        return False
-        return self.StaticURI is not None and uri.startswith(self.StaticURI + "/")
-        
-    def processStaticRequest(self, env, path, start_response):
-        #print ("processStaticRequest({})".format(path))
-        assert path.startswith(self.StaticURI + "/")
-        path = path[len(self.StaticURI)+1:]
-        while ".." in path:
-            path = path.replace("..",".")       # can not jump up
-        path = os.path.join(self.StaticLocation, path)
-        #print ("path=", path)
-        try:
-            st_mode = os.stat(path).st_mode
-            if not stat.S_ISREG(st_mode):
-                #print "not a regular file"
-                return Response("Prohibited", status=403)
-        except:
-            return Response("Not found", status=404)
-            
-        ext = path.rsplit('.',1)[-1]
-        mime_type = self.MIME_TYPES_BASE.get(ext, "text/html")
-
-        def read_iter(f):
-            while True:
-                data = f.read(100000)
-                if not data:    break
-                yield data
-            
-        return Response(app_iter = read_iter(open(path, "rb")),
-            content_type = mime_type)
-            
 class HTTPSServer(HTTPServer):
 
     def __init__(self, port, app, certfile, keyfile, ca_file=None, password=None, **args):
