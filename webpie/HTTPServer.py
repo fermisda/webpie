@@ -264,7 +264,7 @@ class HTTPConnection(Task):
             if PY3: line = to_bytes(line)
             self.CSock.sendall(line)
             byte_count += len(line)
-            
+        self.CSock.close()
         self.Server.log(self.CAddr, request.Method, request.URI, self.ResponseStatus, byte_count)
 
     def start_response(self, status, headers):

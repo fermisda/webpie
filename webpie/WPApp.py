@@ -29,11 +29,14 @@ _WebMethodSignature = "__WebPie:webmethod__"
 
 _MIME_TYPES_BASE = {
         "gif":   "image/gif",
+        "png":   "image/png",
         "jpg":   "image/jpeg",
         "jpeg":   "image/jpeg",
         "js":   "text/javascript",
         "html":   "text/html",
         "txt":   "text/plain",
+        "csv":   "text/csv",
+        "json":   "text/json",
         "css":  "text/css"
     }
 
@@ -465,34 +468,29 @@ class WPStaticHandler(WPHandler):
             
         home = self.Root
         path = os.path.join(home, relpath)
-        try:
-            st_mode = os.stat(path).st_mode
-        except:
+        
+        if not os.path.exists(path):
             return Response("Not found", status=404)
 
-
-        if stat.S_ISDIR(st_mode) and self.DefaultFile:
+        if os.path.isdir(path) and self.DefaultFile:
             path = os.path.join(path, self.DefaultFile)
-            try:
-                st_mode = os.stat(path).st_mode
-            except:
-                return Response("Not found", status=404)
             
-        if not stat.S_ISREG(st_mode):
+        if not os.path.isfile(path):
             #print "not a regular file"
             return Response("Not found", status=404)
+            
+        size = os.path.getsize(path)
 
         ext = path.rsplit('.',1)[-1]
-        mime_type = _MIME_TYPES_BASE.get(ext, "text/html")
+        mime_type = _MIME_TYPES_BASE.get(ext, "text/plain")
 
         def read_iter(f):
             while True:
-                data = f.read(100000)
+                data = f.read(8192)
                 if not data:    break
                 yield data
 
-        return Response(app_iter = read_iter(open(path, "rb")),
-            content_type = mime_type)
+        return Response(app_iter = read_iter(open(path, "rb")), content_length=size, content_type = mime_type)
 
 class WPApp(object):
 
