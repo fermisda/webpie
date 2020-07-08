@@ -279,6 +279,8 @@ class HTTPConnection(Task):
     def run(self):
         self.Started = time.time()
         request = HTTPHeader()
+        
+        self.CSock.settimeout(self.Server.Timeout)
         request_received, body = request.recv(self.CSock)
         
         if not request_received or not request.is_client():
@@ -303,11 +305,13 @@ class HTTPServer(PyThread):
     }
 
     def __init__(self, port, app, remove_prefix = "", url_pattern="*", max_connections = 100, 
+                timeout = 10.0,
                 enabled = True, max_queued = 100,
-                logging = False, log_file = None):
+                logging = False, log_file = None, debug=None):
         PyThread.__init__(self)
         #self.debug("Server started")
         self.Port = port
+        self.Timeout = timeout
         self.WSGIApp = app
         self.Match = url_pattern
         self.Enabled = False
@@ -317,6 +321,14 @@ class HTTPServer(PyThread):
         self.RemovePrefix = remove_prefix
         if enabled:
             self.enableServer()
+        self.Debug = debug
+        
+    @synchronized
+    def debug(self, msg):
+        if self.Debug:
+            self.Debug.write("[debug] %s\n" % (msg,))
+            if self.Debug is sys.stdout:
+                self.Debug.flush()
         
     @synchronized
     def log(self, caddr, method, uri, status, bytes_sent):
@@ -373,10 +385,20 @@ class HTTPServer(PyThread):
         self.Sock.bind(('', self.Port))
         self.Sock.listen(10)
         while True:
-            csock, caddr = self.Sock.accept()
-            conn = self.createConnection(csock, caddr)
-            if conn is not None:
-                self.Connections << conn
+            csock = None
+            try:
+                csock, caddr = self.Sock.accept()
+                conn = self.createConnection(csock, caddr)
+                self.debug("connection created. Active connetions: %d, queued connections: %d" % (
+                    len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
+                if conn is not None:
+                        self.Connections << conn
+                        self.debug("connection queued")
+            except Exception as exc:
+                self.log_error("Error processing connection: %s" % (traceback.format_exc(),))
+                if csock is not None:
+                    try:    csock.close()
+                    except: pass
 
     # overridable
     def createConnection(self, csock, caddr):
