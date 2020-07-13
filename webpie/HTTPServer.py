@@ -326,7 +326,7 @@ class HTTPServer(PyThread):
     @synchronized
     def debug(self, msg):
         if self.Debug:
-            self.Debug.write("[debug] %s\n" % (msg,))
+            self.Debug.write("%s: [debug] %s\n" % (time.ctime(), msg))
             if self.Debug is sys.stdout:
                 self.Debug.flush()
         
@@ -389,13 +389,13 @@ class HTTPServer(PyThread):
             try:
                 csock, caddr = self.Sock.accept()
                 conn = self.createConnection(csock, caddr)
-                self.debug("connection created. Active connetions: %d, queued connections: %d" % (
-                    len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
                 if conn is not None:
                         self.Connections << conn
-                        self.debug("connection queued")
+                        self.debug("Connection from %s queued. Active/queued connections: %d/%d" % (
+                            caddr, len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
             except Exception as exc:
-                self.log_error("Error processing connection: %s" % (traceback.format_exc(),))
+                self.debug("Error processing connection: %s" % (traceback.format_exc(),))
+                self.log_error("Error processing connection: %s" % (exc,))
                 if csock is not None:
                     try:    csock.close()
                     except: pass
