@@ -181,10 +181,13 @@ class HTTPConnection(Task):
         self.OutBuffer = ""
         self.ResponseStatus = None
         self.Started = None
+        self.debug("created. client: %s:%s" % caddr)
+        
+    def __str__(self):
+        return "[connection %x]" % (id(self),)
         
     def debug(self, msg):
-        if Debug:
-            print (msg)
+        self.Server.debug("%s: %s" % (self, msg))
 
     def addToBody(self, data):
         if PY3:   data = to_bytes(data)
@@ -212,6 +215,8 @@ class HTTPConnection(Task):
                 
     def processRequest(self, request):        
         #self.debug("processRequest()")
+        
+        self.debug("processRequest(): %s" % (request,))
 
         env = dict(
             REQUEST_METHOD = request.Method.upper(),
@@ -249,6 +254,7 @@ class HTTPConnection(Task):
         try:
             out = self.Server.wsgi_app(env, self.start_response)    
         except:
+            self.debug("error in wsgi_app: %s" % (traceback.format_exc(),))
             self.start_response("500 Error", 
                             [("Content-Type","text/plain")])
             self.OutBuffer = error = traceback.format_exc()
@@ -266,8 +272,10 @@ class HTTPConnection(Task):
             byte_count += len(line)
         self.CSock.close()
         self.Server.log(self.CAddr, request.Method, request.URI, self.ResponseStatus, byte_count)
+        self.debug("done. socket closed")
 
     def start_response(self, status, headers):
+        self.debug("start_response(%s)" % (status,))
         self.ResponseStatus = status.split()[0]
         out = ["HTTP/1.1 " + status]
         for h,v in headers:
@@ -277,6 +285,7 @@ class HTTPConnection(Task):
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
         
     def run(self):
+        self.debug("started")
         self.Started = time.time()
         request = HTTPHeader()
         
@@ -285,11 +294,13 @@ class HTTPConnection(Task):
         
         if not request_received or not request.is_client():
             # header not received - end
+            self.debug("request not received or not client request: %s" % (request,))
             self.CSock.close()
             return
             
         if body:
             self.addToBody(body)
+
         self.processRequest(request)
 
 class HTTPServer(PyThread):
@@ -333,8 +344,8 @@ class HTTPServer(PyThread):
     @synchronized
     def log(self, caddr, method, uri, status, bytes_sent):
         if self.Logging:
-            self.LogFile.write("{}: {} {} {} {} {}\n".format(
-                    time.ctime(), caddr[0], method, uri, status, bytes_sent
+            self.LogFile.write("{}: {}:{} {} {} {} {}\n".format(
+                    time.ctime(), caddr[0], caddr[1], method, uri, status, bytes_sent
             ))
             if self.LogFile is sys.stdout:
                 self.LogFile.flush()
@@ -342,14 +353,14 @@ class HTTPServer(PyThread):
     @synchronized
     def log_error(self, caddr, message):
         if self.Logging:
-            self.LogFile.write("{}: {} {}\n".format(
-                    time.ctime(), caddr[0], message
+            self.LogFile.write("{}: {}:{} {}\n".format(
+                    time.ctime(), caddr[0], caddr[1], message
             ))
             if self.LogFile is sys.stdout:
                 self.LogFile.flush()
         else:
-            print ("{}: {} {}\n".format(
-                    time.ctime(), caddr[0], message
+            print ("{}: {}:{} {}\n".format(
+                    time.ctime(), caddr[0], caddr[1], message
             ))
         
 
@@ -388,11 +399,12 @@ class HTTPServer(PyThread):
             csock = None
             try:
                 csock, caddr = self.Sock.accept()
+                self.debug("connection accepted from %s:%s" % caddr)
                 conn = self.createConnection(csock, caddr)
                 if conn is not None:
                         self.Connections << conn
-                        self.debug("Connection from %s queued. Active/queued connections: %d/%d" % (
-                            caddr, len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
+                        self.debug("%s from %s queued. Active/queued connections: %d/%d" % (
+                            conn, caddr, len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
             except Exception as exc:
                 self.debug("Error processing connection: %s" % (traceback.format_exc(),))
                 self.log_error("Error processing connection: %s" % (exc,))
