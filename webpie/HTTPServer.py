@@ -1,7 +1,7 @@
 import fnmatch, traceback, sys, time, os.path, stat, pprint, re
 from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue
-from webpie import Response
+from webpie import Response, uid
 
 from .py3 import PY2, PY3, to_str, to_bytes
 Debug = False
@@ -194,8 +194,9 @@ class HTTPConnection(Task):
 
     MAXMSG = 100000
 
-    def __init__(self, server, csock, caddr):
+    def __init__(self, cid, server, csock, caddr):
         Task.__init__(self)
+        self.CID = cid
         self.Server = server
         self.CAddr = caddr
         self.CSock = csock
@@ -206,7 +207,7 @@ class HTTPConnection(Task):
         self.debug("created. client: %s:%s" % caddr)
         
     def __str__(self):
-        return "[connection %x]" % (id(self),)
+        return "[connection %s]" % (self.CID, ))
         
     def debug(self, msg):
         self.Server.debug("%s: %s" % (self, msg))
@@ -423,22 +424,23 @@ class HTTPServer(PyThread):
             csock = None
             try:
                 csock, caddr = self.Sock.accept()
-                self.debug("connection accepted from %s:%s" % caddr)
-                conn = self.createConnection(csock, caddr)
+                cid = uid()
+                self.debug("connection %s accepted from %s:%s" % (cid, caddr[0], caddr[1]))
+                conn = self.createConnection(cid, csock, caddr)
                 if conn is not None:
                         self.Connections << conn
                         self.debug("%s from %s queued. Active/queued connections: %d/%d" % (
                             conn, caddr, len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
             except Exception as exc:
-                self.debug("Error processing connection: %s" % (traceback.format_exc(),))
+                self.debug("connection processing error: %s" % (traceback.format_exc(),))
                 self.log_error("Error processing connection: %s" % (exc,))
                 if csock is not None:
                     try:    csock.close()
                     except: pass
 
     # overridable
-    def createConnection(self, csock, caddr):
-        return HTTPConnection(self, csock, caddr)
+    def createConnection(self, cid, csock, caddr):
+        return HTTPConnection(self, cid, csock, caddr)
 
                 
 class HTTPSServer(HTTPServer):
@@ -455,17 +457,17 @@ class HTTPSServer(HTTPServer):
         self.SSLContext.load_default_certs()
         #print("Context created")
         
-    def createConnection(self, csock, caddr):
-        from ssl import SSLError
+    def createConnection(self, cid, csock, caddr):
         try:    
             tls_socket = self.SSLContext.wrap_socket(csock, server_side=True)
         except Exception as e:
+            self.debug("connection %s: error in wrap_socket: %s" % (cid, e))
             self.log_error(caddr, str(e))
             csock.close()
             return None
         else:
             #pprint.pprint(tls_socket.getpeercert())
-            return HTTPConnection(self, tls_socket, caddr)
+            return HTTPConnection(self, cid, tls_socket, caddr)
             
 
 def run_server(port, app, url_pattern="*"):
