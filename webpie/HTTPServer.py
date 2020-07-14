@@ -65,6 +65,7 @@ class HTTPHeader(object):
         self.Raw = b""
         self.Buffer = b""
         self.Complete = False
+        self.Error = False
         
     def __str__(self):
         return "HTTPHeader(headline='%s', status=%s)" % (self.Headline, self.StatusCode)
@@ -72,15 +73,21 @@ class HTTPHeader(object):
     __repr__ = __str__
 
     def recv(self, sock):
+        tmo = sock.gettimeout()
+        sock.settimeout(5.0)
         received = eof = False
-        body = b''
-        while not received:       # shutdown() will set it to None
-            try:    data = sock.recv(1024)
-            except: data = b''
-            if data:
-                received, body = self.consume(data)
-            else:
-                eof = True
+        error = None
+        try:
+            body = b''
+            while not received and not error:       # shutdown() will set it to None
+                try:    data = sock.recv(1024)
+                except: data = b''
+                if data:
+                    received, error, body = self.consume(data)
+                else:
+                    eof = True
+        finally:
+            sock.settimeout(tmo)
         return received, body
         
     def replaceURI(self, uri):
@@ -91,6 +98,9 @@ class HTTPHeader(object):
 
     def is_client(self):
         return self.Method is not None
+        
+    def is_valid(self):
+        return self.Protocol and self.Protocol.upper().startswith("HTTP/")
 
     def is_final(self):
         return self.is_server() and self.StatusCode//100 != 1 or self.is_client()
@@ -103,7 +113,7 @@ class HTTPHeader(object):
         match = self.EOH_RE.search(header_buffer)
         if not match:   
             self.Buffer = header_buffer
-            return False, b''
+            return False, len(self.Buffer) > 100000, b''
         i1, i2 = match.span()            
         self.Complete = True
         self.Raw = header = header_buffer[:i1]
@@ -136,7 +146,7 @@ class HTTPHeader(object):
                 except: pass
             self.Headers = headers
         self.Buffer = b""
-        return True, rest
+        return True, False, rest
 
     def removeKeepAlive(self):
         if "Connection" in self.Headers:
@@ -292,9 +302,9 @@ class HTTPConnection(Task):
         self.CSock.settimeout(self.Server.Timeout)
         request_received, body = request.recv(self.CSock)
         
-        if not request_received or not request.is_client():
+        if not request_received or not request.is_valid() or not request.is_client():
             # header not received - end
-            self.debug("request not received or not client request: %s" % (request,))
+            self.debug("request not received or invalid or not client request: %s" % (request,))
             self.CSock.close()
             return
             
