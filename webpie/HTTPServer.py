@@ -1,7 +1,8 @@
 import fnmatch, traceback, sys, time, os.path, stat, pprint, re
 from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue
-from webpie import Response, uid
+from webpie import Response
+from .uid import uid
 
 from .py3 import PY2, PY3, to_str, to_bytes
 Debug = False
@@ -207,7 +208,7 @@ class HTTPConnection(Task):
         self.debug("created. client: %s:%s" % caddr)
         
     def __str__(self):
-        return "[connection %s]" % (self.CID, ))
+        return "[connection %s]" % (self.CID, )
         
     def debug(self, msg):
         self.Server.debug("%s: %s" % (self, msg))
@@ -361,6 +362,7 @@ class HTTPServer(PyThread):
         
     @synchronized
     def debug(self, msg):
+        #print("debug: %s %s" % (type(self.Debug), self.Debug))
         if self.Debug:
             self.Debug.write("%s: [debug] %s\n" % (time.ctime(), msg))
             if self.Debug is sys.stdout:
@@ -421,7 +423,9 @@ class HTTPServer(PyThread):
         self.Sock.bind(('', self.Port))
         self.Sock.listen(10)
         while True:
+            self.debug("--- accept loop port=%d start" % (self.Port,))
             csock = None
+            caddr = ('-','-')
             try:
                 csock, caddr = self.Sock.accept()
                 cid = uid()
@@ -433,14 +437,15 @@ class HTTPServer(PyThread):
                             conn, caddr, len(self.Connections.activeTasks()), len(self.Connections.waitingTasks())))
             except Exception as exc:
                 self.debug("connection processing error: %s" % (traceback.format_exc(),))
-                self.log_error("Error processing connection: %s" % (exc,))
+                self.log_error(caddr, "Error processing connection: %s" % (exc,))
                 if csock is not None:
                     try:    csock.close()
                     except: pass
+            self.debug("--- accept loop port=%d end" % (self.Port,))
 
     # overridable
     def createConnection(self, cid, csock, caddr):
-        return HTTPConnection(self, cid, csock, caddr)
+        return HTTPConnection(cid, self, csock, caddr)
 
                 
 class HTTPSServer(HTTPServer):
@@ -464,10 +469,11 @@ class HTTPSServer(HTTPServer):
             self.debug("connection %s: error in wrap_socket: %s" % (cid, e))
             self.log_error(caddr, str(e))
             csock.close()
+            self.debug("connection %s: socket closed" % (cid,))
             return None
         else:
             #pprint.pprint(tls_socket.getpeercert())
-            return HTTPConnection(self, cid, tls_socket, caddr)
+            return HTTPConnection(cid, self, tls_socket, caddr)
             
 
 def run_server(port, app, url_pattern="*"):
