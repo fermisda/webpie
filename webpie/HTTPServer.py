@@ -309,25 +309,35 @@ class HTTPConnection(Task):
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
         
     def run(self):
-        self.debug("started")
-        self.Started = time.time()
-        request = HTTPHeader()
+        try:
+            self.debug("started")
+            self.Started = time.time()
+            self.CSock.settimeout(self.Server.Timeout)        
+            try:
+                self.CSock = self.Server.wrap_socket(self.CSock)
+                self.debug("socket wrapped")
+            except Exception as e:
+                self.debug("Error wrapping socket: %s" % (e,))
+            else:
+                request = HTTPHeader()
+                request_received, body = request.recv(self.CSock)
         
-        self.CSock.settimeout(self.Server.Timeout)
-        request_received, body = request.recv(self.CSock)
-        
-        if not request_received or not request.is_valid() or not request.is_client():
-            # header not received - end
-            self.debug("request not received or invalid or not client request: %s" % (request,))
-            if request.Error:
-                self.debug("request read error: %s" % (request.Error,))
-            self.CSock.close()
-            return
+                if not request_received or not request.is_valid() or not request.is_client():
+                    # header not received - end
+                    self.debug("request not received or invalid or not client request: %s" % (request,))
+                    if request.Error:
+                        self.debug("request read error: %s" % (request.Error,))
+                    self.CSock.close()
+                    return
             
-        if body:
-            self.addToBody(body)
+                if body:
+                    self.addToBody(body)
 
-        self.processRequest(request)
+                self.processRequest(request)
+        finally:
+            # make sure to close the underlying socket
+            try:    self.CSock.close()
+            except: pass
 
 class HTTPServer(PyThread):
 
@@ -446,6 +456,9 @@ class HTTPServer(PyThread):
     # overridable
     def createConnection(self, cid, csock, caddr):
         return HTTPConnection(cid, self, csock, caddr)
+        
+    def wrap_socket(self, sock):
+        return sock
 
                 
 class HTTPSServer(HTTPServer):
@@ -462,18 +475,8 @@ class HTTPSServer(HTTPServer):
         self.SSLContext.load_default_certs()
         #print("Context created")
         
-    def createConnection(self, cid, csock, caddr):
-        try:    
-            tls_socket = self.SSLContext.wrap_socket(csock, server_side=True)
-        except Exception as e:
-            self.debug("connection %s: error in wrap_socket: %s" % (cid, e))
-            self.log_error(caddr, str(e))
-            csock.close()
-            self.debug("connection %s: socket closed" % (cid,))
-            return None
-        else:
-            #pprint.pprint(tls_socket.getpeercert())
-            return HTTPConnection(cid, self, tls_socket, caddr)
+    def wrap_socket(self, sock):
+        return self.SSLContext.wrap_socket(sock, server_side=True)
             
 
 def run_server(port, app, url_pattern="*"):
