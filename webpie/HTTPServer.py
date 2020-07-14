@@ -57,6 +57,7 @@ class HTTPHeader(object):
         self.StatusCode = None
         self.StatusMessage = ""
         self.Method = None
+        self.Protocol = None
         self.URI = None
         self.Path = None
         self.Query = ""
@@ -76,12 +77,15 @@ class HTTPHeader(object):
         tmo = sock.gettimeout()
         sock.settimeout(5.0)
         received = eof = False
-        error = None
+        self.Error = None
         try:
             body = b''
             while not received and not error and not eof:       # shutdown() will set it to None
-                try:    data = sock.recv(1024)
-                except: data = b''
+                try:    
+                    data = sock.recv(1024)
+                except Exception as e:
+                    self.Error = "Error in recv(): %s" % (e,)
+                    data = b''
                 if data:
                     received, error, body = self.consume(data)
                 else:
@@ -100,12 +104,13 @@ class HTTPHeader(object):
         return self.Method is not None
         
     def is_valid(self):
-        return self.Protocol and self.Protocol.upper().startswith("HTTP/")
+        return self.Error = None and self.Protocol and self.Protocol.upper().startswith("HTTP/")
 
     def is_final(self):
         return self.is_server() and self.StatusCode//100 != 1 or self.is_client()
 
     EOH_RE = re.compile(b"\r?\n\r?\n")
+    MAXREAD = 100000
 
     def consume(self, inp):
         #print(self, ".consume(): inp:", inp)
@@ -113,7 +118,11 @@ class HTTPHeader(object):
         match = self.EOH_RE.search(header_buffer)
         if not match:   
             self.Buffer = header_buffer
-            return False, len(self.Buffer) > 100000, b''
+            error = False
+            if len(header_buffer) > self.MAXREAD:
+                self.Error = "Request is too long: %d" % (len(header_buffer),)
+                error = True
+            return False, error, b''
         i1, i2 = match.span()            
         self.Complete = True
         self.Raw = header = header_buffer[:i1]
@@ -127,6 +136,7 @@ class HTTPHeader(object):
             words = headline.split(" ", 2)
             #print ("HTTPHeader: headline:", headline, "    words:", words)
             if len(words) != 3:
+                self.Error = "Can not parse headline. len(words)=%d" % (len(words),)
                 return True, True, b''      # malformed headline
             if words[0].lower().startswith("http/"):
                 self.StatusCode = int(words[1])
@@ -307,6 +317,8 @@ class HTTPConnection(Task):
         if not request_received or not request.is_valid() or not request.is_client():
             # header not received - end
             self.debug("request not received or invalid or not client request: %s" % (request,))
+            if request.Error:
+                self.debug("request read error: %s" % (request.Error,))
             self.CSock.close()
             return
             
