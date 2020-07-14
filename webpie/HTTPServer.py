@@ -80,7 +80,7 @@ class HTTPHeader(object):
         self.Error = None
         try:
             body = b''
-            while not received and not error and not eof:       # shutdown() will set it to None
+            while not received and not self.Error and not eof:       # shutdown() will set it to None
                 try:    
                     data = sock.recv(1024)
                 except Exception as e:
@@ -104,7 +104,7 @@ class HTTPHeader(object):
         return self.Method is not None
         
     def is_valid(self):
-        return self.Error = None and self.Protocol and self.Protocol.upper().startswith("HTTP/")
+        return self.Error is None and self.Protocol and self.Protocol.upper().startswith("HTTP/")
 
     def is_final(self):
         return self.is_server() and self.StatusCode//100 != 1 or self.is_client()
