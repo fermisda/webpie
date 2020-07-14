@@ -79,7 +79,7 @@ class HTTPHeader(object):
         error = None
         try:
             body = b''
-            while not received and not error:       # shutdown() will set it to None
+            while not received and not error and not eof:       # shutdown() will set it to None
                 try:    data = sock.recv(1024)
                 except: data = b''
                 if data:
@@ -126,6 +126,8 @@ class HTTPHeader(object):
             
             words = headline.split(" ", 2)
             #print ("HTTPHeader: headline:", headline, "    words:", words)
+            if len(words) != 3:
+                return True, True, b''      # malformed headline
             if words[0].lower().startswith("http/"):
                 self.StatusCode = int(words[1])
                 self.StatusMessage = words[2]
