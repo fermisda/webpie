@@ -7,7 +7,8 @@ class Static(WPHandler):
     
     def __init__(self, request, app):
         WPHandler.__init__(self, request, app)
-        self.static = WPStaticHandler(request, app, "./static_content")
+        self.static = WPStaticHandler(request, app, "./static_content",
+            cache_ttl=300)
     
     def time(self, request, relpath, **args):
         return """

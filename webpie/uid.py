@@ -9,7 +9,7 @@ class _UIDGen(Primitive):
         self.Range = 1000000
         self.Next = 1
 
-    _alphabet=string.ascii_lowercase
+    _alphabet=string.ascii_lowercase + string.ascii_uppercase
 
     @synchronized
     def get(self, as_int=False):

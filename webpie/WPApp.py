@@ -2,7 +2,7 @@ from .webob import Response
 from .webob import Request as webob_request
 from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound
     
-import os.path, os, stat, sys, traceback, fnmatch
+import os.path, os, stat, sys, traceback, fnmatch, datetime
 from threading import RLock
 
 PY2 = sys.version_info[0] == 2
@@ -454,12 +454,13 @@ class WPHandler:
         
 class WPStaticHandler(WPHandler):
     
-    def __init__(self, request, app, root="static", default_file="index.html"):
+    def __init__(self, request, app, root="static", default_file="index.html", cache_ttl=None):
         WPHandler.__init__(self, request, app)
         self.DefaultFile = default_file
         if not (root.startswith(".") or root.startswith("/")):
             root = self.App.ScriptHome + "/" + root
         self.Root = root
+        self.CacheTTL = cache_ttl
 
     def __call__(self, request, relpath, **args):
         
@@ -479,6 +480,19 @@ class WPStaticHandler(WPHandler):
             #print "not a regular file"
             return Response("Not found", status=404)
             
+        mtime = os.path.getmtime(path)
+        mtime = datetime.datetime.utcfromtimestamp(mtime)
+        
+        if "If-Modified-Since" in request.headers:
+            # <day-name>, <day> <month> <year> <hour>:<minute>:<second> GMT
+            dt_str = request.headers["If-Modified-Since"]
+            words = dt_str.split()
+            if len(words) == 6 and words[-1] == "GMT":
+                dt_str = " ".join(words[1:-1])      # keep only <day> <month> <year> <hour>:<minute>:<second>
+                dt = datetime.datetime.strptime(dt_str, '%d %b %Y %H:%M:%S')
+                if mtime < dt:
+                    return 304
+            
         size = os.path.getsize(path)
 
         ext = path.rsplit('.',1)[-1]
@@ -490,7 +504,11 @@ class WPStaticHandler(WPHandler):
                 if not data:    break
                 yield data
 
-        return Response(app_iter = read_iter(open(path, "rb")), content_length=size, content_type = mime_type)
+        resp = Response(app_iter = read_iter(open(path, "rb")), content_length=size, content_type = mime_type)
+        #resp.headers["Last-Modified"] = mtime.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        if self.CacheTTL is not None:
+            resp.cache_control.max_age = self.CacheTTL        
+        return resp
 
 class WPApp(object):
 

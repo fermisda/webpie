@@ -291,11 +291,16 @@ class HTTPConnection(Task):
         byte_count = 0
 
         for line in out:
-            if PY3: line = to_bytes(line)
-            self.CSock.sendall(line)
+            line = to_bytes(line)
+            try:    self.CSock.sendall(line)
+            except Exception as e:
+                self.Server.log_error(self.CAddr, "error sending body: %s" % (e,))
+                break
             byte_count += len(line)
+        else:
+            self.Server.log(self.CAddr, request.Method, request.URI, self.ResponseStatus, byte_count)
+
         self.CSock.close()
-        self.Server.log(self.CAddr, request.Method, request.URI, self.ResponseStatus, byte_count)
         self.debug("done. socket closed")
 
     def start_response(self, status, headers):
