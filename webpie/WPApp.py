@@ -517,7 +517,10 @@ class WPApp(object):
     def __init__(self, root_class, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
             prefix=None, replace_prefix=None):
-        if not isinstance(root_class, type) and callable(root_class):
+
+        import types
+
+        if isinstance(root_class, types.FunctionType):
             # if it's in fact a function, use LambdaHandlerFactory to wrap 
             # the function into a LambdaHandler
             root_class = LambdaHandlerFactory(root_class)

@@ -309,7 +309,7 @@ class HTTPConnection(Task):
         out = ["HTTP/1.1 " + status]
         for h,v in headers:
             if h != "Connection":
-                out.append(f"{h}: {v}")
+                out.append("%s: %s" % (h, v))
         out.append("Connection: close")     # can not handle keep-alive
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
         
