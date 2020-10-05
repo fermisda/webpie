@@ -539,6 +539,8 @@ class WPApp(object):
         self.Initialized = False
         self.Prefix = prefix
         self.ReplacePrefix = replace_prefix
+        self.HandlerParams = []
+        self.HandlerArgs = {}
 
     def _app_lock(self):
         return self._AppLock
@@ -640,7 +642,10 @@ class WPApp(object):
                 
         return path
                 
-            
+    def handler_options(self, *params, **args):
+        self.HandlerParams = params
+        self.HandlerArgs = args
+        return self
 
     def __call__(self, environ, start_response):
         #print 'app call ...'
@@ -674,7 +679,7 @@ class WPApp(object):
                 resp = self.static(path[len(static_prefix):])
 
         if resp is None:
-            root = self.RootClass(req, self)
+            root = self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
             try:
                 return root.wsgi_call(environ, start_response)
             except:
