@@ -516,7 +516,7 @@ class WPApp(object):
 
     def __init__(self, root_class, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix=None):
+            prefix=None, replace_prefix="", default_path="index"):
 
         import types
 
@@ -541,6 +541,7 @@ class WPApp(object):
         self.ReplacePrefix = replace_prefix
         self.HandlerParams = []
         self.HandlerArgs = {}
+        self.DefaultPath = default_path
 
     def _app_lock(self):
         return self._AppLock
@@ -625,20 +626,20 @@ class WPApp(object):
             
     def convertPath(self, path):
         if self.Prefix is not None:
-            matched = ""
-            ok = False
+            matched = None
             if path == self.Prefix:
                 matched = path
-                ok = True
             elif path.startswith(self.Prefix + '/'):
                 matched = self.Prefix
-                ok = True
                 
-            if not ok:
+            if matched is None:
                 return None
                 
             if self.ReplacePrefix is not None:
-                path = self.ReplacePrefix + (path[len(matched):] or "/")
+                path = self.ReplacePrefix + path[len(matched):]
+                
+            path = path or "/"
+            #print(f"converted to: [{path}]")
                 
         return path
                 
@@ -648,15 +649,20 @@ class WPApp(object):
         return self
 
     def __call__(self, environ, start_response):
-        #print 'app call ...'
         path = environ.get('PATH_INFO', '')
+        #print('app call: path:', path)
         environ["WebPie.original_path"] = path
         #print 'path:', path_down
-        
+
+
         path = self.convertPath(path)
         if path is None:
             return HTTPNotFound()(environ, start_response)
         
+        if (not path or path=="/") and self.DefaultPath is not None:
+            #print ("redirecting to", self.DefaultPath)
+            return HTTPFound(location=self.DefaultPath)(environ, start_response)
+            
         environ["PATH_INFO"] = path
 
         req = Request(environ)

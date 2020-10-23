@@ -53,7 +53,7 @@ class BodyFile(object):
 
 class HTTPHeader(object):
 
-    def __init__(self):
+    def __init__(self, context):
         self.Headline = None
         self.StatusCode = None
         self.StatusMessage = ""
@@ -68,6 +68,7 @@ class HTTPHeader(object):
         self.Buffer = b""
         self.Complete = False
         self.Error = False
+        self.Context = context
         
     def __str__(self):
         return "HTTPHeader(headline='%s', status=%s)" % (self.Headline, self.StatusCode)
@@ -237,7 +238,7 @@ class HTTPConnection(Task):
                         out[k] = v
         return out
                 
-    def processRequest(self, request):        
+    def processRequest(self, request, context):        
         #self.debug("processRequest()")
         
         self.debug("processRequest(): %s" % (request,))
@@ -274,6 +275,7 @@ class HTTPConnection(Task):
 
         env["wsgi.input"] = BodyFile(self.Body, self.CSock, body_length)
         
+        out = []
         
         try:
             out = self.Server.wsgi_app(env, self.start_response)    
@@ -283,7 +285,6 @@ class HTTPConnection(Task):
                             [("Content-Type","text/plain")])
             self.OutBuffer = error = traceback.format_exc()
             self.Server.log_error(self.CAddr, error)
-        
         
         if self.OutBuffer:      # from start_response
             self.CSock.sendall(to_bytes(self.OutBuffer))
@@ -319,12 +320,12 @@ class HTTPConnection(Task):
             self.Started = time.time()
             self.CSock.settimeout(self.Server.Timeout)        
             try:
-                self.CSock = self.Server.wrap_socket(self.CSock)
+                self.CSock, context = self.Server.wrap_socket(self.CSock)
                 self.debug("socket wrapped")
             except Exception as e:
                 self.debug("Error wrapping socket: %s" % (e,))
             else:
-                request = HTTPHeader()
+                request = HTTPHeader(context)
                 request_received, body = request.recv(self.CSock)
         
                 if not request_received or not request.is_valid() or not request.is_client():
@@ -338,7 +339,7 @@ class HTTPConnection(Task):
                 if body:
                     self.addToBody(body)
 
-                self.processRequest(request)
+                self.processRequest(request, context)
         finally:
             # make sure to close the underlying socket
             try:    self.CSock.close()
@@ -415,6 +416,7 @@ class HTTPServer(PyThread):
         return path
 
     def wsgi_app(self, env, start_response):
+        #print("server.wsgi_app")
         return self.WSGIApp(env, start_response)
         
     @synchronized
@@ -463,7 +465,7 @@ class HTTPServer(PyThread):
         return HTTPConnection(cid, self, csock, caddr)
         
     def wrap_socket(self, sock):
-        return sock
+        return sock, None
 
                 
 class HTTPSServer(HTTPServer):
@@ -481,7 +483,7 @@ class HTTPSServer(HTTPServer):
         #print("Context created")
         
     def wrap_socket(self, sock):
-        return self.SSLContext.wrap_socket(sock, server_side=True)
+        return self.SSLContext.wrap_socket(sock, server_side=True), self.SSLContext
             
 
 def run_server(port, app, url_pattern="*"):
