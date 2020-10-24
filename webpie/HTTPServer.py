@@ -53,7 +53,7 @@ class BodyFile(object):
 
 class HTTPHeader(object):
 
-    def __init__(self, context):
+    def __init__(self):
         self.Headline = None
         self.StatusCode = None
         self.StatusMessage = ""
@@ -68,7 +68,6 @@ class HTTPHeader(object):
         self.Buffer = b""
         self.Complete = False
         self.Error = False
-        self.Context = context
         
     def __str__(self):
         return "HTTPHeader(headline='%s', status=%s)" % (self.Headline, self.StatusCode)
@@ -237,11 +236,28 @@ class HTTPConnection(Task):
                     else:
                         out[k] = v
         return out
-                
-    def processRequest(self, request, ssl_context):        
+        
+    def format_x509_name(self, x509_name):
+        components = [(to_str(k), to_str(v)) for k, v in x509_name.get_components()]
+        return "/".join(f"{k}={v}" for k, v in components)
+        
+    def x509_names(self, ssl_info):
+        import OpenSSL.crypto as crypto
+        subject, issuer = None, None
+        if ssl_info is not None:
+            cert_bin = ssl_info.getpeercert(True)
+            if cert_bin is not None:
+                x509 = crypto.load_certificate(crypto.FILETYPE_ASN1,cert_bin)
+                if x509 is not None:
+                    subject = self.format_x509_name(x509.get_subject())
+                    issuer = self.format_x509_name(x509.get_issuer())
+        return subject, issuer
+
+    def processRequest(self, request, ssl_info):        
         #self.debug("processRequest()")
         
         self.debug("processRequest(): %s" % (request,))
+
 
         env = dict(
             REQUEST_METHOD = request.Method.upper(),
@@ -250,11 +266,17 @@ class HTTPConnection(Task):
             SERVER_PROTOCOL = request.Protocol,
             QUERY_STRING = request.Query
         )
+        env["wsgi.url_scheme"] = "http"
+
+        if ssl_info != None:
+            subject, issuer = self.x509_names(ssl_info)
+            env["SSL_CLIENT_S_DN"] = subject
+            env["SSL_CLIENT_I_DN"] = issuer
+            env["wsgi.url_scheme"] = "https"
         
         if request.Headers.get("Expect") == "100-continue":
             self.CSock.sendall(b'HTTP/1.1 100 Continue\n\n')
                 
-        env["wsgi.url_scheme"] = "http"
         env["query_dict"] = self.parseQuery(request.Query)
         
         #print ("processRequest: env={}".format(env))
@@ -320,12 +342,12 @@ class HTTPConnection(Task):
             self.Started = time.time()
             self.CSock.settimeout(self.Server.Timeout)        
             try:
-                self.CSock, ssl_context = self.Server.wrap_socket(self.CSock)
+                self.CSock, ssl_info = self.Server.wrap_socket(self.CSock)
                 self.debug("socket wrapped")
             except Exception as e:
                 self.debug("Error wrapping socket: %s" % (e,))
             else:
-                request = HTTPHeader(context)
+                request = HTTPHeader()
                 request_received, body = request.recv(self.CSock)
         
                 if not request_received or not request.is_valid() or not request.is_client():
@@ -339,7 +361,7 @@ class HTTPConnection(Task):
                 if body:
                     self.addToBody(body)
 
-                self.processRequest(request, ssl_context)
+                self.processRequest(request, ssl_info)
         finally:
             # make sure to close the underlying socket
             try:    self.CSock.close()
@@ -470,7 +492,7 @@ class HTTPServer(PyThread):
                 
 class HTTPSServer(HTTPServer):
 
-    def __init__(self, port, app, certfile, keyfile, ca_file=None, password=None, **args):
+    def __init__(self, port, app, certfile, keyfile, verify="none", ca_file=None, password=None, **args):
         HTTPServer.__init__(self, port, app, **args)
         import ssl
         #self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLS)
@@ -478,12 +500,17 @@ class HTTPSServer(HTTPServer):
         self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
         if ca_file is not None:
             self.SSLContext.load_verify_locations(cafile=ca_file)
-        self.SSLContext.verify_mode = ssl.CERT_NONE
+        self.SSLContext.verify_mode = {
+                "none":ssl.CERT_NONE,
+                "optional":ssl.CERT_OPTIONAL,
+                "required":ssl.CERT_REQUIRED
+            }[verify]
         self.SSLContext.load_default_certs()
         #print("Context created")
         
     def wrap_socket(self, sock):
-        return self.SSLContext.wrap_socket(sock, server_side=True), self.SSLContext
+        ssl_socket = self.SSLContext.wrap_socket(sock, server_side=True)
+        return ssl_socket, ssl_socket
             
 
 def run_server(port, app, url_pattern="*"):
