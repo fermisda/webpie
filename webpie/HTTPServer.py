@@ -238,7 +238,7 @@ class HTTPConnection(Task):
                         out[k] = v
         return out
                 
-    def processRequest(self, request, context):        
+    def processRequest(self, request, ssl_context):        
         #self.debug("processRequest()")
         
         self.debug("processRequest(): %s" % (request,))
@@ -320,7 +320,7 @@ class HTTPConnection(Task):
             self.Started = time.time()
             self.CSock.settimeout(self.Server.Timeout)        
             try:
-                self.CSock, context = self.Server.wrap_socket(self.CSock)
+                self.CSock, ssl_context = self.Server.wrap_socket(self.CSock)
                 self.debug("socket wrapped")
             except Exception as e:
                 self.debug("Error wrapping socket: %s" % (e,))
@@ -339,7 +339,7 @@ class HTTPConnection(Task):
                 if body:
                     self.addToBody(body)
 
-                self.processRequest(request, context)
+                self.processRequest(request, ssl_context)
         finally:
             # make sure to close the underlying socket
             try:    self.CSock.close()
