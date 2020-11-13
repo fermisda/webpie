@@ -673,6 +673,8 @@ class WPApp(object):
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.Initialized = True
 
+            self.init()
+
         resp = None
             
         # ----- deprecated. Use WPStaticHandler -------
@@ -692,6 +694,11 @@ class WPApp(object):
                 resp = self.applicationErrorResponse(
                     "Uncaught exception", sys.exc_info())
         return resp(environ, start_response)
+        
+    def init(self):
+        # overraidable. will be called once after self.ScriptName, self.ScriptHome, self.Script are initialized
+        # it is good idea to init Jinja environment here
+        pass
         
     def jinja_globals(self):
         # override me

@@ -76,7 +76,7 @@ class HTTPHeader(object):
 
     def recv(self, sock):
         tmo = sock.gettimeout()
-        sock.settimeout(5.0)
+        sock.settimeout(15.0)
         received = eof = False
         self.Error = None
         try:
