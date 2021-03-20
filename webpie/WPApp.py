@@ -526,6 +526,7 @@ class WPApp(object):
             root_class = LambdaHandlerFactory(root_class)
             
         enable_static = enable_static or (static_location is not None)
+        enable_static = False
         if static_location is None: static_location = "./static"
         self.StaticPath = static_path
         self.StaticLocation = static_location
@@ -542,7 +543,8 @@ class WPApp(object):
         self.HandlerParams = []
         self.HandlerArgs = {}
         self.DefaultPath = default_path
-
+        self.Environ = {}
+        
     def _app_lock(self):
         return self._AppLock
         
@@ -552,6 +554,12 @@ class WPApp(object):
     def __exit__(self, *params):
         return self._AppLock.__exit__(*params)
     
+    def environ(self, name):
+        return self.Environ.get(name, os.environ.get(name))
+        
+    def set_environ(self, name, value):
+        self.Environ[name] = value
+
     # override
     @app_synchronized
     def acceptIncomingTransfer(self, method, uri, headers):
