@@ -297,7 +297,11 @@ class RequestProcessor(Logged):
                 break
             byte_count += len(line)
         else:
-            self.log(request.CAddr, header.Method, header.URI, request.AppName, self.ResponseStatus, byte_count)
+            self.log('%s %s:%s %s %s %s %s' % 
+                (   request.AppName, request.CAddr[0], request.CAddr[1], 
+                    header.Method, header.URI, self.ResponseStatus, byte_count
+                )
+            )
 
         csock.close()
         self.debug("done. socket closed")
