@@ -366,7 +366,6 @@ class RequestReader(Task, Logged):
         self.SocketWrapper = socket_wrapper
         self.Dispatcher = dispatcher
         self.Timeout = timeout
-        self.debug("created. client: %s:%s" % caddr)
         
     def __str__(self):
         return "[reader %s]" % (self.Request.Id, )
