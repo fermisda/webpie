@@ -297,7 +297,7 @@ class RequestProcessor(Logged):
                 break
             byte_count += len(line)
         else:
-            self.log(request.CAddr, header.Method, header.URI, self.ResponseStatus, byte_count)
+            self.log(request.CAddr, header.Method, header.URI, self.App.Name, self.ResponseStatus, byte_count)
 
         csock.close()
         self.debug("done. socket closed")
@@ -321,6 +321,7 @@ class DirectApplication(Logged):
         import importlib
         
         Logged.__init__(self, f"[app {app.__class__.__name__}]", logger)
+        self.Name = app.__class__.__name__
         self.WPApp = app
         
     def accept(self, request):
