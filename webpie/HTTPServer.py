@@ -297,9 +297,10 @@ class RequestProcessor(Logged):
                 break
             byte_count += len(line)
         else:
-            self.log('%s %s:%s %s %s %s %s' % 
-                (   request.AppName, request.CAddr[0], request.CAddr[1], 
-                    header.Method, header.OriginalURI, self.ResponseStatus, byte_count
+            self.log('%s:%s %s %s %s %s %s %s' % 
+                (   request.CAddr[0], request.CAddr[1], header.OriginalURI, 
+                    request.AppName, header.Method, header.path(), 
+                    self.ResponseStatus, byte_count
                 )
             )
 
