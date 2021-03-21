@@ -680,7 +680,7 @@ class WPApp(object):
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.Initialized = True
 
-            self.init(environ)
+            self.init()
 
         resp = None
             
