@@ -297,8 +297,9 @@ class RequestProcessor(Logged):
                 break
             byte_count += len(line)
         else:
-            self.log('%s:%s %s %s %s %s %s %s' % 
-                (   request.CAddr[0], request.CAddr[1], header.Method, header.OriginalURI, 
+            self.log('%s:%s :%s %s %s -> %s %s %s %s' % 
+                (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                    header.Method, header.OriginalURI, 
                     request.AppName, header.path(), 
                     self.ResponseStatus, byte_count
                 )
@@ -337,8 +338,9 @@ class DirectApplication(Logged):
 
 class Request(object):
     
-    def __init__(self, rid, header, body, csock, caddr):
+    def __init__(self, rid, port, header, body, csock, caddr):
         self.Id = rid
+        self.ServerPort = port
         self.HTTPHeader = header
         self.CSock = csock
         self.CAddr = caddr
@@ -468,7 +470,6 @@ class HTTPServer(PyThread, Logged):
         max_readers = config.get("max_connections", max_connections)
         queue_capacity = config.get("queue_capacity", max_queued)
         self.RequestReaderQueue = TaskQueue(max_readers, capacity=queue_capacity, delegate=self)
-
         self.SocketWrapper = SocketWrapper(config, certfile, keyfile, verify, ca_file, password)
         
     def connectionCount(self):
@@ -492,7 +493,7 @@ class HTTPServer(PyThread, Logged):
                 cid = uid()
                 self.debug("connection %s accepted from %s:%s" % (cid, caddr[0], caddr[1]))
                 
-                reader = RequestReader(cid, self.SocketWrapper, self.Dispatcher, csock, caddr, self.Timeout, self.Logger)
+                reader = RequestReader(cid, self.Port, self.SocketWrapper, self.Dispatcher, csock, caddr, self.Timeout, self.Logger)
                 self.RequestReaderQueue << reader
             except Exception as exc:
                 self.debug("connection processing error: %s" % (traceback.format_exc(),))
