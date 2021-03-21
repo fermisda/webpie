@@ -556,21 +556,13 @@ class WPApp(object):
     def __exit__(self, *params):
         return self._AppLock.__exit__(*params)
     
-    def environ(self, name):
-        return self.Environ.get(name, os.environ.get(name))
-        
-    def set_environ(self, name, value):
-        print("set_environ(", name, value, ")")
-        self.Environ[name] = value
-
+    # override
     def reload(self):
         pass
 
-    # override
-    @app_synchronized
-    def acceptIncomingTransfer(self, method, uri, headers):
-        return True
-            
+    def environ(self, name, default=None):
+        return self.Environ.get(name, default)
+
     @app_synchronized
     def initJinjaEnvironment(self, tempdirs = [], filters = {}, globals = {}):
         # to be called by subclass
@@ -666,6 +658,7 @@ class WPApp(object):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
         environ["WebPie.original_path"] = path
+        environ.update(self.Environ)
         #print 'path:', path_down
 
 
@@ -687,7 +680,7 @@ class WPApp(object):
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.Initialized = True
 
-            self.init()
+            self.init(environ)
 
         resp = None
             
