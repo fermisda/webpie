@@ -305,7 +305,7 @@ class RequestProcessor(Logged):
                 )
             )
 
-        csock.close()
+        request.close()
         self.debug("done. socket closed")
 
     def start_response(self, status, headers):
@@ -348,6 +348,13 @@ class Request(object):
         self.SSLInfo = None     
         self.AppName = None
         
+    def close(self):
+        if self.CSock is not None:
+            try:    self.CSock.close()
+            except: pass
+            self.CSock = None
+        self.SSLInfo = None
+        
 class RequestReader(Task, Logged):
 
     MAXMSG = 100000
@@ -356,8 +363,6 @@ class RequestReader(Task, Logged):
         Task.__init__(self)
         self.Request = request
         Logged.__init__(self, f"[reader {request.Id}]", logger)
-        self.CAddr = caddr
-        self.CSock = csock
         self.SocketWrapper = socket_wrapper
         self.Dispatcher = dispatcher
         self.Timeout = timeout
@@ -381,7 +386,9 @@ class RequestReader(Task, Logged):
             self.Started = time.time()
             csock.settimeout(self.Timeout)        
             try:
-                csock, ssl_info = self.SocketWrapper.wrap(self.CSock)
+                csock, ssl_info = self.SocketWrapper.wrap(self.Request.CSock)
+                self.Request.CSock = csock
+                self.Request.SSLInfo = ssl_info
                 self.debug("socket wrapped")
             except Exception as e:
                 self.debug("Error wrapping socket: %s" % (e,))
@@ -446,7 +453,7 @@ class Dispatcher(object):
                 return app
         else:
             request.CSock.sendall(b"HTTP/1.1 403 Not found\n\n")
-            request.CSock.close()
+            request.close()
             return None
             
 class HTTPServer(PyThread, Logged):
