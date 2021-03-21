@@ -326,6 +326,7 @@ class DirectApplication(Logged):
         
     def accept(self, request):
         p = RequestProcessor(self.WPApp, request, self.Logger)
+        request.AppName = self.Name
         p.run()
         return True
 
@@ -338,6 +339,7 @@ class Request(object):
         self.CAddr = caddr
         self.Body = body
         self.SSLInfo = None     # for now
+        self.AppName = None
         
 class RequestReader(Task, Logged):
 

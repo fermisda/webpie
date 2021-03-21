@@ -44,6 +44,7 @@ class QueuedApplication(Logged):
             if self.ReplacePrefix:
                 uri = self.ReplacePrefix + uri
             header.replaceURI(uri)
+            request.AppName = self.Name
             self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
             return True
         else:
