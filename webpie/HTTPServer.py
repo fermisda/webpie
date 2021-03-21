@@ -338,23 +338,23 @@ class DirectApplication(Logged):
 
 class Request(object):
     
-    def __init__(self, rid, port, header, body, csock, caddr):
-        self.Id = rid
+    def __init__(self, port, csock, caddr):
+        self.Id = uid.uid()
         self.ServerPort = port
-        self.HTTPHeader = header
         self.CSock = csock
         self.CAddr = caddr
-        self.Body = body
-        self.SSLInfo = None     # for now
+        self.HTTPHeader = None
+        self.Body = b''
+        self.SSLInfo = None     
         self.AppName = None
         
 class RequestReader(Task, Logged):
 
     MAXMSG = 100000
 
-    def __init__(self, cid, socket_wrapper, dispatcher, csock, caddr, timeout, logger):
+    def __init__(self, request, socket_wrapper, dispatcher, timeout, logger):
         Task.__init__(self)
-        self.CID = cid
+        self.Request = request
         Logged.__init__(self, f"[reader {self.CID}]", logger)
         self.CAddr = caddr
         self.CSock = csock
@@ -374,30 +374,34 @@ class RequestReader(Task, Logged):
     def run(self):
         header = None
         body = b''
+        request = self.Request
+        csock = request.CSock
         try:
             self.debug("started")
             self.Started = time.time()
-            self.CSock.settimeout(self.Timeout)        
+            csock.settimeout(self.Timeout)        
             try:
-                self.CSock, ssl_info = self.SocketWrapper.wrap(self.CSock)
+                csock, ssl_info = self.SocketWrapper.wrap(self.CSock)
                 self.debug("socket wrapped")
             except Exception as e:
                 self.debug("Error wrapping socket: %s" % (e,))
             else:
                 header = HTTPHeader()
-                request_received, body = header.recv(self.CSock)
+                request_received, body = header.recv(csock)
         
                 if not request_received or not header.is_valid() or not header.is_client():
                     # header not received - end
                     self.debug("request not received or invalid or not client request: %s" % (request,))
                     if header.Error:
                         self.debug("request read error: %s" % (request.Error,))
-                    self.CSock.close()
+                    request.close()
                     return None
                 else:
-                    self.Dispatcher.dispatch(Request(self.CID, header, body, self.CSock, self.CAddr))
+                    request.HTTPHeader = header
+                    request.Body = body
+                    self.Dispatcher.dispatch(self.Request)
         finally:
-            self.SocketWrapper = self.Logger = self.CSock = None
+            self.SocketWrapper = self.Dispatcher = self.Logger = None
 
 class SocketWrapper(object):
      
@@ -490,10 +494,9 @@ class HTTPServer(PyThread, Logged):
             caddr = ('-','-')
             try:
                 csock, caddr = self.Sock.accept()
-                cid = uid()
-                self.debug("connection %s accepted from %s:%s" % (cid, caddr[0], caddr[1]))
-                
-                reader = RequestReader(cid, self.Port, self.SocketWrapper, self.Dispatcher, csock, caddr, self.Timeout, self.Logger)
+                request = Request(self.Port, csock, caddr)
+                self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
+                reader = RequestReader(request, self.SocketWrapper, self.Dispatcher, self.Timeout, self.Logger)
                 self.RequestReaderQueue << reader
             except Exception as exc:
                 self.debug("connection processing error: %s" % (traceback.format_exc(),))
