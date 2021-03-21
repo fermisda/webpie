@@ -516,7 +516,8 @@ class WPApp(object):
 
     def __init__(self, root_class, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix="", default_path="index"):
+            prefix=None, replace_prefix="", default_path="index",
+            environ={}):
 
         import types
 
@@ -544,6 +545,7 @@ class WPApp(object):
         self.HandlerArgs = {}
         self.DefaultPath = default_path
         self.Environ = {}
+        self.Environ.update(environ)
         
     def _app_lock(self):
         return self._AppLock
@@ -558,7 +560,11 @@ class WPApp(object):
         return self.Environ.get(name, os.environ.get(name))
         
     def set_environ(self, name, value):
+        print("set_environ(", name, value, ")")
         self.Environ[name] = value
+
+    def reload(self):
+        pass
 
     # override
     @app_synchronized

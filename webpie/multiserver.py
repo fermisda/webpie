@@ -14,34 +14,35 @@ class RequestTask(RequestProcessor, Task):
 
 class QueuedApplication(Logged):
     
-    def __init__(self, name, config, logger=None):
+    def __init__(self, config, logger=None):
         
-        self.Name = name
+        self.Config = config
+        self.Name = config["name"]
         Logged.__init__(self, f"[app {self.Name}]", logger)
         self.Prefix = config["prefix"]
         self.ReplacePrefix = config.get("replace_prefix")
-        self.Timeout = config.get("timeout", 10)
-        self.AppName = app_name = config.get("application", "application")
         self.ModuleName = config["module"]
+        self.Env = env = {}
+        env.update(config.get("env", {}))
         self.Module = module = importlib.import_module(self.ModuleName)
-        self.WSGIApp = app = getattr(module, app_name)
-        self.Config = config
-        for name, value in config.get("env", {}).items():
-            app.set_environ(name, value)
+        self.WSGIApp = app = getattr(module, "create_application")(env)
+        self.Timeout = config.get("timeout", 10)
         max_workers = config.get("max_workers", 5)
         queue_capacity = config.get("queue_capacity", 10)
         self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity)
         
     def reload(self):
-        module = self.Module = importlib.reload(self.Module)
-        self.WSGIApp = getattr(module, self.AppName)
+        importlib.reload(self.Module)
+        self.WSGIApp = getattr(self.Module, "create_application")(self.Env)
         
     def accept(self, request):
         header = request.HTTPHeader
         uri = header.URI
         if uri.startswith(self.Prefix):
+            uri = uri[len(self.Prefix):]
+            if not uri.startswith("/"):     uri = "/" + uri
             if self.ReplacePrefix:
-                uri = self.ReplacePrefix + uri[len(self.Prefix):]
+                uri = self.ReplacePrefix + uri
             header.replaceURI(uri)
             self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
             return True
@@ -57,15 +58,17 @@ class MultiServer(Logged):
                 if cfg.get("enabled", True):
                     logger = Logger(cfg.get("file","-"))
         Logged.__init__(self, "[Multiserver]", logger)
-        sys.path += config.get("paths", [])
-        self.Apps = {aname:QueuedApplication(aname, cfg, logger) for aname, cfg in config["apps"].items()}
-        self.Servers = [HTTPServer(cfg["port"], self.Apps, config=cfg, logger=logger) for cfg in config["servers"]]
         self.Config = config
+        sys.path += config.get("paths", [])
+        self.Servers = []
+        for cfg in config["servers"]:
+            port = cfg["port"]
+            apps = [QueuedApplication(app_cfg, logger) for app_cfg in cfg["apps"]]
+            self.Servers.append(HTTPServer(port, apps, config=cfg, logger=logger))
         
     def reload(self):
-        for aname, app in self.Apps.items():
-            app.reload()
-            self.log(f"app {aname} reloaded")
+        for s in self.Servers:
+            s.reload()
             
     def run(self):
         for s in self.Servers:

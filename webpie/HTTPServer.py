@@ -63,8 +63,6 @@ class HTTPHeader(object):
         self.Method = None
         self.Protocol = None
         self.URI = None
-        self.Path = None
-        self.Query = ""
         self.OriginalURI = None
         self.Headers = {}
         self.Raw = b""
@@ -149,10 +147,7 @@ class HTTPHeader(object):
             else:
                 self.Method = words[0].upper()
                 self.Protocol = words[2].upper()
-                self.Path = self.URI = self.OriginalURI = uri = words[1]
-                if '?' in uri:
-                    # detach query part
-                    self.Path, self.Query = uri.split("?", 1)
+                self.URI = self.OriginalURI = words[1]
                     
             for l in lines[1:]:
                 if not l:   continue
@@ -163,6 +158,15 @@ class HTTPHeader(object):
             self.Headers = headers
         self.Buffer = b""
         return True, False, rest
+
+    def path(self):
+        return self.URI.split("?",1)[0]
+
+    def query(self):
+        if '?' in self.URI:
+             return self.URI.split("?",1)[1]
+        else:
+             return ""
 
     def removeKeepAlive(self):
         if "Connection" in self.Headers:
@@ -229,10 +233,10 @@ class RequestProcessor(Logged):
         
         env = dict(
             REQUEST_METHOD = header.Method.upper(),
-            PATH_INFO = header.Path,
+            PATH_INFO = header.path(),
             SCRIPT_NAME = "",
             SERVER_PROTOCOL = header.Protocol,
-            QUERY_STRING = header.Query
+            QUERY_STRING = header.query()
         )
         env["wsgi.url_scheme"] = "http"
 
@@ -245,7 +249,7 @@ class RequestProcessor(Logged):
         if header.Headers.get("Expect") == "100-continue":
             csock.sendall(b'HTTP/1.1 100 Continue\n\n')
                 
-        env["query_dict"] = self.parseQuery(header.Query)
+        env["query_dict"] = self.parseQuery(header.query())
         
         #print ("processRequest: env={}".format(env))
         body_length = None
@@ -268,6 +272,9 @@ class RequestProcessor(Logged):
         out = []
         
         try:
+            #print("env:")
+            #for k, v in env.items():
+            #    print(k,":",v)
             out = self.App(env, self.start_response)    
         except:
             self.debug("error in wsgi_app: %s" % (traceback.format_exc(),))
@@ -444,10 +451,9 @@ class HTTPServer(PyThread, Logged):
             #print("logs sent to:", f)
         Logged.__init__(self, f"[server {self.Port}]", logger)
         if isinstance(apps, WPApp):
-            my_apps = [DirectApplication(apps, self.Logger)]
-        else:
-            my_apps = [apps[sname] for sname in config["apps"]]
-        self.Dispatcher = Dispatcher(my_apps)
+            apps = [DirectApplication(apps, self.Logger)]
+        self.Apps = apps
+        self.Dispatcher = Dispatcher(apps)
         self.Logger = logger
         self.Timeout = config.get("timeout", timeout)
         max_readers = config.get("max_connections", max_connections)
@@ -456,9 +462,12 @@ class HTTPServer(PyThread, Logged):
 
         self.SocketWrapper = SocketWrapper(config, certfile, keyfile, verify, ca_file, password)
         
-    @synchronized
     def connectionCount(self):
         return len(self.Connections)    
+
+    def reload(self):
+        for app in self.Apps:
+            app.reload()
             
     def run(self):
         self.Sock = socket(AF_INET, SOCK_STREAM)
