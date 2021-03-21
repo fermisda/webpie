@@ -355,7 +355,7 @@ class RequestReader(Task, Logged):
     def __init__(self, request, socket_wrapper, dispatcher, timeout, logger):
         Task.__init__(self)
         self.Request = request
-        Logged.__init__(self, f"[reader {self.CID}]", logger)
+        Logged.__init__(self, f"[reader {request.Id}]", logger)
         self.CAddr = caddr
         self.CSock = csock
         self.SocketWrapper = socket_wrapper
@@ -364,7 +364,7 @@ class RequestReader(Task, Logged):
         self.debug("created. client: %s:%s" % caddr)
         
     def __str__(self):
-        return "[reader %s]" % (self.CID, )
+        return "[reader %s]" % (self.Request.Id, )
         
     def addToBody(self, data):
         if PY3:   data = to_bytes(data)
