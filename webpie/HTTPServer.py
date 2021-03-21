@@ -203,6 +203,7 @@ class RequestProcessor(Logged):
         self.App = wsgi_app
         self.Request = request
         self.OutBuffer = ""
+        self.ResponseStatus = None
         Logged.__init__(self, f"[request {request.Id}]", logger)
         
     def parseQuery(self, query):
@@ -281,7 +282,7 @@ class RequestProcessor(Logged):
             self.start_response("500 Error", 
                             [("Content-Type","text/plain")])
             self.OutBuffer = error = traceback.format_exc()
-            self.log_error(self.CAddr, error)
+            self.log_error(request.CAddr, error)
         
         if self.OutBuffer:      # from start_response
             csock.sendall(to_bytes(self.OutBuffer))
@@ -296,7 +297,7 @@ class RequestProcessor(Logged):
                 break
             byte_count += len(line)
         else:
-            self.log(self.Request.CAddr, header.Method, header.URI, self.ResponseStatus, byte_count)
+            self.log(request.CAddr, header.Method, header.URI, self.ResponseStatus, byte_count)
 
         csock.close()
         self.debug("done. socket closed")
