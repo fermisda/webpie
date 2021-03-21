@@ -278,7 +278,7 @@ class RequestProcessor(Logged):
             #    print(k,":",v)
             out = self.App(env, self.start_response)    
         except:
-            self.debug("error in wsgi_app: %s" % (traceback.format_exc(),))
+            self.log_error("error in wsgi_app: %s" % (traceback.format_exc(),))
             self.start_response("500 Error", 
                             [("Content-Type","text/plain")])
             self.OutBuffer = error = traceback.format_exc()
@@ -293,13 +293,13 @@ class RequestProcessor(Logged):
             line = to_bytes(line)
             try:    csock.sendall(line)
             except Exception as e:
-                self.log_error(self.Request.CAddr, "error sending body: %s" % (e,))
+                self.log_error(request.CAddr, "error sending body: %s" % (e,))
                 break
             byte_count += len(line)
         else:
             self.log('%s:%s %s %s %s %s %s %s' % 
-                (   request.CAddr[0], request.CAddr[1], header.OriginalURI, 
-                    request.AppName, header.Method, header.path(), 
+                (   request.CAddr[0], request.CAddr[1], header.Method, header.OriginalURI, 
+                    request.AppName, header.path(), 
                     self.ResponseStatus, byte_count
                 )
             )
