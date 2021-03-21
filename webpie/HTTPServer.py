@@ -299,7 +299,7 @@ class RequestProcessor(Logged):
         else:
             self.log('%s %s:%s %s %s %s %s' % 
                 (   request.AppName, request.CAddr[0], request.CAddr[1], 
-                    header.Method, header.URI, self.ResponseStatus, byte_count
+                    header.Method, header.OriginalURI, self.ResponseStatus, byte_count
                 )
             )
 
