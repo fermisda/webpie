@@ -339,7 +339,7 @@ class DirectApplication(Logged):
 class Request(object):
     
     def __init__(self, port, csock, caddr):
-        self.Id = uid.uid()
+        self.Id = uid()
         self.ServerPort = port
         self.CSock = csock
         self.CAddr = caddr
