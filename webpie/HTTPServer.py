@@ -204,7 +204,7 @@ class RequestProcessor(Logged):
         self.Request = request
         self.OutBuffer = ""
         self.ResponseStatus = None
-        Logged.__init__(self, f"[request {request.Id}]", logger)
+        Logged.__init__(self, request.Id, logger)
         
     def parseQuery(self, query):
         out = {}
