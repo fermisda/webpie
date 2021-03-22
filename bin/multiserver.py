@@ -62,10 +62,13 @@ class MultiServer(Primitive, Logged):
         self.Config = config
         self.Servers = []
         self.ServersByPort = {}
+        self.SavedSysPath = sys.path[:]
         self.reconfigure(config)
         self.debug("debug is enabled")
     
     def reconfigure(self, config):
+        if "pythonpath" in config:
+            sys.path = config["pythonpath"] + self.SavedSysPath
         new_servers = config["servers"]
         new_ports = {cfg["port"] for cfg in new_servers}
         to_stop = []
