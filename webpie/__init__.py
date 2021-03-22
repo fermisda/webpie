@@ -6,7 +6,7 @@ from .HTTPServer import run_server, HTTPServer
 from .multiserver import MultiServer
 from .logs import Logger, Logged
 
-__all__ = [ "WPApp", "WPHandler", "Response", "MultiServer",
+__all__ = [ "WPApp", "WPHandler", "Response", 
 	"WPSessionApp", "HTTPServer", "app_synchronized", "webmethod", "WPStaticHandler",
     "Logged", "Logger"
 ]
