@@ -1,9 +1,6 @@
-import traceback, sys, time, signal, importlib, yaml
+import traceback, sys, time, signal, importlib, yaml, os
 from pythreader import Task, TaskQueue, Primitive, synchronized
-
-from .py3 import PY2, PY3, to_str, to_bytes
-from .HTTPServer import HTTPServer, RequestProcessor
-from .logs import Logged, Logger
+from webpie import Logged, Logger, HTTPServer, RequestProcessor
 
 class RequestTask(RequestProcessor, Task):
     
@@ -105,3 +102,43 @@ class MultiServer(Primitive, Logged):
         while self.Servers:
             for s in self.Servers:
                 s.join()
+
+Usage = """
+multiserver <config.yaml>
+"""
+
+class   SignalHandler:
+
+    def __init__(self, signum, receiver, config_file):
+        self.Receiver = receiver
+        self.ConfigFile = config_file
+        signal.signal(signum, self)
+        
+    def __call__(self, signo, frame):
+        try:    
+            config = yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader)
+            self.Receiver.reconfigure(config)
+        except: 
+            import traceback
+            traceback.print_exc()
+            
+def main():
+    if not sys.argv[1:] or sys.argv[1] in ("-?", "-h", "--help", "help"):
+        print(Usage)
+        sys.exit(2)
+    config_file = sys.argv[1]
+    config = yaml.load(open(config_file, 'r'), Loader=yaml.SafeLoader)
+    logger = None
+    if "logger" in config:
+        cfg = config["logger"]
+        debug = cfg.get("debug", False)
+        if cfg.get("enabled", True):
+            logger = Logger(cfg.get("file", "-"), debug=debug)
+    if "pid_file" in config:
+        open(config["pid_file"], "w").write(str(os.getpid()))
+    ms = MultiServer(config, logger)
+    s = SignalHandler(signal.SIGHUP, ms, config_file)
+    ms.join()
+
+if __name__ == "__main__":
+    main()
