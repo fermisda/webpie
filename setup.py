@@ -40,5 +40,11 @@ setup(
         "License :: OSI Approved :: BSD License",
         'Intended Audience :: Developers',
         'Natural Language :: English',
-    ]
+    ],
+    entry_points = {
+            "console_scripts": [
+                "multiserver = bin.multiserver_ui:main",
+            ]
+        }
+    
 )
