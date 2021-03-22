@@ -601,35 +601,6 @@ class WPApp(object):
         return Response(text, status = '500 Application Error')
 
 
-    # ----- deprecated. Use WPStaticHandler -------
-    def static(self, relpath):
-        #print("WPApp.static: relpath:", relpath)
-        while ".." in relpath:
-            relpath = relpath.replace("..",".")
-        home = self.StaticLocation
-        #print("WPApp.static: home:", home)
-        path = os.path.join(home, relpath)
-        #print ("static: path:", path)
-        try:
-            st_mode = os.stat(path).st_mode
-            if not stat.S_ISREG(st_mode):
-                #print "not a regular file"
-                return Response("Not found", status=404)
-        except:
-            return Response("Not found", status=404)
-
-        ext = path.rsplit('.',1)[-1]
-        mime_type = self.MIME_TYPES_BASE.get(ext, "text/html")
-
-        def read_iter(f):
-            while True:
-                data = f.read(100000)
-                if not data:    break
-                yield data
-        #print "returning response..."
-        return Response(app_iter = read_iter(open(path, "rb")),
-            content_type = mime_type)
-            
     def convertPath(self, path):
         if self.Prefix is not None:
             matched = None
