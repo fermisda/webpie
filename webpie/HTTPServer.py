@@ -412,7 +412,6 @@ class RequestReader(Task, Logged):
                     request.HTTPHeader = header
                     request.Body = body
                     app = self.Dispatcher.dispatch(self.Request)
-                    self.debug('dispatched to "%s"' % (app.Name,))
                     dispatched = app is not None
         finally:
             csock.settimeout(saved_timeout) 
