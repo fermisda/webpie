@@ -1,5 +1,5 @@
-import traceback, sys, time, signal, importlib, yaml, os
-from pythreader import Task, TaskQueue, Primitive, synchronized
+import traceback, sys, time, signal, importlib, yaml, os, os.path
+from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread
 from webpie import Logged, Logger, HTTPServer, RequestProcessor
 
 class RequestTask(RequestProcessor, Task):
@@ -54,19 +54,22 @@ class QueuedApplication(Logged):
         else:
             return False
             
-class MultiServer(Primitive, Logged):
+class MultiServer(PyThread, Logged):
             
-    def __init__(self, config, logger=None):
-        Primitive.__init__(self)
+    def __init__(self, config_file, logger=None):
+        PyThread.__init__(self)
         Logged.__init__(self, "[Multiserver]", logger, debug=True)
-        self.Config = config
+        self.ConfigFile = config_file
         self.Servers = []
         self.ServersByPort = {}
         self.SavedSysPath = sys.path[:]
-        self.reconfigure(config)
+        self.ReconfiguredTime = 0
+        self.reconfigure()
         self.debug("debug is enabled")
     
-    def reconfigure(self, config):
+    def reconfigure(self):
+        self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
+        self.Config = config = yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader)
         if "pythonpath" in config:
             sys.path = config["pythonpath"] + self.SavedSysPath
         new_servers = config["servers"]
@@ -101,7 +104,13 @@ class MultiServer(Primitive, Logged):
             
         self.debug("reconfigured")
         
-    def join(self):
+    def run(self):
+        while True:
+            time.sleep(5)
+            if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
+                self.reconfigure()
+                
+    def ___join(self):
         while self.Servers:
             for s in self.Servers:
                 s.join()
@@ -112,15 +121,13 @@ multiserver <config.yaml>
 
 class   SignalHandler:
 
-    def __init__(self, signum, receiver, config_file):
+    def __init__(self, signum, receiver):
         self.Receiver = receiver
-        self.ConfigFile = config_file
         signal.signal(signum, self)
         
     def __call__(self, signo, frame):
         try:    
-            config = yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader)
-            self.Receiver.reconfigure(config)
+            self.Receiver.reconfigure()
         except: 
             import traceback
             traceback.print_exc()
@@ -139,8 +146,9 @@ def main():
             logger = Logger(cfg.get("file", "-"), debug=debug)
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
-    ms = MultiServer(config, logger)
-    s = SignalHandler(signal.SIGHUP, ms, config_file)
+    ms = MultiServer(config_file, logger)
+    s = SignalHandler(signal.SIGHUP, ms)
+    ms.start()
     ms.join()
 
 if __name__ == "__main__":
