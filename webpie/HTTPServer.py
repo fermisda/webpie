@@ -68,7 +68,7 @@ class HTTPHeader(object):
         self.Raw = b""
         self.Buffer = b""
         self.Complete = False
-        self.Error = False
+        self.Error = None
         
     def __str__(self):
         return "HTTPHeader(headline='%s', status=%s)" % (self.Headline, self.StatusCode)
@@ -405,7 +405,7 @@ class RequestReader(Task, Logged):
                     # header not received - end
                     self.debug("request not received or invalid or not client request: %s" % (request,))
                     if header.Error:
-                        self.debug("request read error: %s" % (request.Error,))
+                        self.debug("request read error: %s" % (header.Error,))
                     request.close()
                     return None
                 else:
