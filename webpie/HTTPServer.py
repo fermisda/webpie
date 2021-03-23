@@ -448,7 +448,7 @@ class SSLSocketWrapper(object):
 
 class HTTPServer(PyThread, Logged):
 
-    def __init__(self, port, apps, logger=None, max_connections = 100, 
+    def __init__(self, port, apps, sock=None, logger=None, max_connections = 100, 
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = None, debug=None,
@@ -456,6 +456,7 @@ class HTTPServer(PyThread, Logged):
                 ):
         PyThread.__init__(self)
         self.Port = port
+        self.Sock = sock
         assert self.Port is not None, "Port must be specified"
         if logger is None and logging and log_file is not None:
             f = sys.stdout if log_file == "-" else open(log_file, "a")
@@ -502,10 +503,12 @@ class HTTPServer(PyThread, Logged):
         return len(self.Connections)    
 
     def run(self):
-        self.Sock = socket(AF_INET, SOCK_STREAM)
-        self.Sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        self.Sock.bind(('', self.Port))
-        self.Sock.listen(10)
+        if self.Sock is None:
+            # therwise use the socket supplied to the constructior
+            self.Sock = socket(AF_INET, SOCK_STREAM)
+            self.Sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+            self.Sock.bind(('', self.Port))
+            self.Sock.listen(10)
         while not self.Stop:
             self.debug("--- accept loop port=%d start" % (self.Port,))
             csock = None
