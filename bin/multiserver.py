@@ -64,18 +64,26 @@ class QueuedApplication(Logged):
         self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity)
         
     def loadApp(self, config):
-        args = None
-        fname = config["file"]
-        g = {}
-        exec(open(fname, "r").read(), g)
-        if "create" in config:
-            args = config.get("args")
-            app = g[config["create"]](args)
-        else:
-            app = g[config.get("application", "application")]
-        self.AppArgs = args
-        self.WSGIApp = app
-        return app
+        saved_path = sys.path[:]
+        try:
+            args = None
+            fname = config["file"]
+            g = {}
+            extra_path = config["python_path"]
+            if isinstance(extra_path, str):
+                extra_path = [extra_path]
+            sys.path = extra_path + sys.path
+            exec(open(fname, "r").read(), g)
+            if "create" in config:
+                args = config.get("args")
+                app = g[config["create"]](args)
+            else:
+                app = g[config.get("application", "application")]
+            self.AppArgs = args
+            self.WSGIApp = app
+            return app
+        finally:
+            sys.path = saved_path
         
     def accept(self, request):
         header = request.HTTPHeader
@@ -101,7 +109,6 @@ class MultiServer(PyThread, Logged):
         self.ConfigFile = config_file
         self.Servers = []
         self.ServersByPort = {}
-        self.SavedSysPath = sys.path[:]
         self.ReconfiguredTime = 0
         self.reconfigure()
         self.debug("debug is enabled")
@@ -109,8 +116,6 @@ class MultiServer(PyThread, Logged):
     def reconfigure(self):
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
-        if "pythonpath" in config:
-            sys.path = config["pythonpath"] + self.SavedSysPath
         new_servers = config["servers"]
         new_ports = {cfg["port"] for cfg in new_servers}
         to_stop = []
