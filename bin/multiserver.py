@@ -7,32 +7,35 @@ import re
 
 subst = re.compile("(%\((\w+)\))")
 
+def expand_str(text, vars):
+    out = []
+    i0 = 0
+    for m in subst.finditer(text):
+        name = m.group(2)
+        i1 = m.end(1)
+        if name in vars:
+            out.append(text[i0:m.start(1)])
+            out.append(str(vars[name]))
+        else:
+            out.append(text[i0:i1])
+        i0 = i1
+    out.append(text[i0:])
+    return "".join(out)
+
+
 def expand(item, vars={}):
     if isinstance(item, str):
-        text = item
-        out = []
-        i0 = 0
-        for m in subst.finditer(text):
-            name = m.group(2)
-            i1 = m.end(1)
-            if name in vars:
-                out.append(text[i0:m.start(1)])
-                out.append(str(vars[name]))
-            else:
-                out.append(text[i0:i1])
-            i0 = i1
-        out.append(text[i0:])
-        item = "".join(out)
+        return expand_str(item, vars)
     elif isinstance(item, dict):
         new_vars = {}
         new_vars.update(vars)
 
         # substitute top level strings only
-        out = {k:substitute_str(v, vars) for k, v in d.items() if isinstance(v, (str, int))}
+        out = {k:expand_str(v, vars) for k, v in item.items() if isinstance(v, (str, int))}
 
         # use this as the substitution dictionary
         new_vars.update(out)    
-        out.update({k:expand(v, new_vars) for k, v in d.items()})
+        out.update({k:expand(v, new_vars) for k, v in item.items()})
         item = out
     elif isinstance(item, list):
         item = [expand(item, vars) for item in lst]
