@@ -31,7 +31,7 @@ def expand(item, vars={}):
         new_vars.update(vars)
 
         # substitute top level strings only
-        out = {k:expand_str(v, vars) for k, v in item.items() if isinstance(v, str))}
+        out = {k:expand_str(v, vars) for k, v in item.items() if isinstance(v, str)}
 
         # use this as the substitution dictionary
         new_vars.update(out)    
