@@ -25,13 +25,13 @@ def expand_str(text, vars):
 
 def expand(item, vars={}):
     if isinstance(item, str):
-        return expand_str(item, vars)
+        item = expand_str(item, vars)
     elif isinstance(item, dict):
         new_vars = {}
         new_vars.update(vars)
 
         # substitute top level strings only
-        out = {k:expand_str(v, vars) for k, v in item.items() if isinstance(v, (str, int))}
+        out = {k:expand_str(v, vars) for k, v in item.items() if isinstance(v, str))}
 
         # use this as the substitution dictionary
         new_vars.update(out)    
