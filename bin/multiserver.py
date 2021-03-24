@@ -38,7 +38,7 @@ def expand(item, vars={}):
         out.update({k:expand(v, new_vars) for k, v in item.items()})
         item = out
     elif isinstance(item, list):
-        item = [expand(item, vars) for item in lst]
+        item = [expand(x, vars) for x in item]
     return item
             
 class RequestTask(RequestProcessor, Task):
