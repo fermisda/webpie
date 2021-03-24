@@ -3,6 +3,41 @@ from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread
 from webpie import Logged, Logger, HTTPServer, RequestProcessor
 from multiprocessing import Process
 
+import re
+
+subst = re.compile("(%\((\w+)\))")
+
+def expand(item, vars={}):
+    if isinstance(item, str):
+        text = item
+        out = []
+        i0 = 0
+        for m in subst.finditer(text):
+            name = m.group(2)
+            i1 = m.end(1)
+            if name in vars:
+                out.append(text[i0:m.start(1)])
+                out.append(str(vars[name]))
+            else:
+                out.append(text[i0:i1])
+            i0 = i1
+        out.append(text[i0:])
+        item = "".join(out)
+    elif isinstance(item, dict):
+        new_vars = {}
+        new_vars.update(vars)
+
+        # substitute top level strings only
+        out = {k:substitute_str(v, vars) for k, v in d.items() if isinstance(v, (str, int))}
+
+        # use this as the substitution dictionary
+        new_vars.update(out)    
+        out.update({k:expand(v, new_vars) for k, v in d.items()})
+        item = out
+    elif isinstance(item, list):
+        item = [expand(item, vars) for item in lst]
+    return item
+            
 class RequestTask(RequestProcessor, Task):
     
     def __init__(self, wsgi_app, request, logger):
@@ -70,7 +105,7 @@ class MultiServer(PyThread, Logged):
     
     def reconfigure(self):
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
-        self.Config = config = yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader)
+        self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
         if "pythonpath" in config:
             sys.path = config["pythonpath"] + self.SavedSysPath
         new_servers = config["servers"]
@@ -138,7 +173,7 @@ def main():
         print(Usage)
         sys.exit(2)
     config_file = sys.argv[1]
-    config = yaml.load(open(config_file, 'r'), Loader=yaml.SafeLoader)
+    config = expand(yaml.load(open(config_file, 'r'), Loader=yaml.SafeLoader))
     logger = None
     if "logger" in config:
         cfg = config["logger"]

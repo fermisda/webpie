@@ -13,19 +13,16 @@ from .py3 import PY2, PY3, to_str, to_bytes
 class BodyFile(object):
     
     def __init__(self, buf, sock, length):
+        #print("BodyFile: buf:", buf)
         self.Buffer = buf
         self.Sock = sock
         self.Remaining = length
         
     def get_chunk(self, n):
+        #print("get_chunk: Buffer:", self.Buffer)
         if self.Buffer:
-            chunk = self.Buffer[0]
-            if len(chunk) > n:
-                out = chunk[:n]
-                self.Buffer[0] = chunk[n:]
-            else:
-                out = chunk
-                self.Buffer = self.Buffer[1:]
+            out = self.Buffer[:n]
+            self.Buffer = self.Buffer[n:]
         elif self.Sock is not None:
             out = self.Sock.recv(n)
             if not out: self.Sock = None
@@ -370,10 +367,10 @@ class RequestReader(Task, Logged):
     def __str__(self):
         return "[reader %s]" % (self.Request.Id, )
         
-    def addToBody(self, data):
-        if PY3:   data = to_bytes(data)
-        #print ("addToBody:", data)
-        self.Body.append(data)
+    #def addToBody(self, data):
+    #    if PY3:   data = to_bytes(data)
+    #    #print ("addToBody:", data)
+    #    self.Body.append(data)
 
     def run(self):
         header = None
@@ -400,13 +397,13 @@ class RequestReader(Task, Logged):
             if not error:
                 header = HTTPHeader()
                 request_received, body = header.recv(csock)
+                csock.settimeout(saved_timeout) 
     
                 if not request_received or not header.is_valid() or not header.is_client():
                     # header not received - end
                     self.debug("request not received or invalid or not client request: %s" % (request,))
                     if header.Error:
                         self.debug("request read error: %s" % (header.Error,))
-                    request.close()
                     return None
                 else:
                     request.HTTPHeader = header
@@ -414,7 +411,6 @@ class RequestReader(Task, Logged):
                     app = self.Dispatcher.dispatch(self.Request)
                     dispatched = app is not None
         finally:
-            csock.settimeout(saved_timeout) 
             if not dispatched:
                 csock.sendall(b"HTTP/1.1 404 Not found\n\n")
                 request.close()
