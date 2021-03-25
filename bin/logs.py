@@ -15,6 +15,7 @@ class Logger(Primitive):
                 log_file = LogStream(sys.stdout)
             else:
                 log_file = LogFile(log_file)
+                log_file.start()
         self.LogFile = log_file
         self.Debug = debug
         
