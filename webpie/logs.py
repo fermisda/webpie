@@ -1,5 +1,5 @@
 import traceback, sys, time
-from LogFile import LogFile, LogStream
+from .LogFile import LogFile, LogStream
 
 from pythreader import synchronized, Primitive
 

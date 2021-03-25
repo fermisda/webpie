@@ -1,5 +1,4 @@
-FILES = multiserver.py LogFile.py logs.py
-
+FILES = multiserver.py 
 DST_DIR = $(BUILD_DIR)/bin
 
 build: $(DST_DIR)
