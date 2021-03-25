@@ -1,8 +1,8 @@
 import traceback, sys, time
+from LogFile import LogFile, LogStream
 
 from pythreader import synchronized, Primitive
 
-#from .py3 import PY2, PY3, to_str, to_bytes
 Debug = False
 
 class Logger(Primitive):
@@ -12,9 +12,9 @@ class Logger(Primitive):
         Primitive.__init__(self)
         if isinstance(log_file, str):
             if log_file == "-":
-                log_file = sys.stdout
+                log_file = LogStream(sys.stdout)
             else:
-                log_file = open(log_file, "w")
+                log_file = LogFile(log_file)
         self.LogFile = log_file
         self.Debug = debug
         
