@@ -69,10 +69,11 @@ class QueuedApplication(Logged):
             args = None
             fname = config["file"]
             g = {}
-            extra_path = config["python_path"]
-            if isinstance(extra_path, str):
-                extra_path = [extra_path]
-            sys.path = extra_path + sys.path
+            extra_path = config.get("python_path")
+            if extra_path is not None:
+                if isinstance(extra_path, str):
+                    extra_path = [extra_path]
+                sys.path = extra_path + sys.path
             exec(open(fname, "r").read(), g)
             if "create" in config:
                 args = config.get("args")
@@ -116,6 +117,7 @@ class MultiServer(PyThread, Logged):
     def reconfigure(self):
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
+        templates = config.get("templates", {})
         new_servers = config["servers"]
         new_ports = {cfg["port"] for cfg in new_servers}
         to_stop = []
@@ -127,7 +129,16 @@ class MultiServer(PyThread, Logged):
         new_lst = []
         for cfg in new_servers:
             port = cfg["port"]
-            apps = [QueuedApplication(app_cfg, self.Logger) for app_cfg in cfg["apps"]]
+            apps = []
+            for app_cfg in cfg["apps"]:
+                template = templates.get(app_cfg.get("template", "*"))
+                if template is not None:
+                    c = {}
+                    c.update(template)
+                    c.update(app_cfg)
+                    app_cfg = expand(c)
+                #print("reconfigure: app_cfg:", app_cfg)
+                apps.append(QueuedApplication(app_cfg, self.Logger))
             app_list = ",".join(a.Name for a in apps)
             srv = self.ServersByPort.get(port)
             if srv is None:

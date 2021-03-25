@@ -24,7 +24,7 @@ class Logger(Primitive):
         #print("who:", who)
         #print("parts:", parts)
         if self.LogFile is not None:
-            print("%s: %s: %s" % (time.ctime(), who, " ".join([str(p) for p in parts])), file=self.LogFile)
+            self.LogFile.log("%s: %s: %s" % (time.ctime(), who, " ".join([str(p) for p in parts])))
         
     debug = log
 
