@@ -66,15 +66,21 @@ class QueuedApplication(Logged):
     def loadApp(self, config):
         saved_path = sys.path[:]
         saved_modules = set(sys.modules.keys())
+        saved_environ = os.environ.copy()
         try:
             args = None
             fname = config["file"]
             g = {}
+
             extra_path = config.get("python_path")
             if extra_path is not None:
                 if isinstance(extra_path, str):
                     extra_path = [extra_path]
                 sys.path = extra_path + sys.path
+
+            if "env" in config:
+                os.environ.update(config["env"])
+                
             exec(open(fname, "r").read(), g)
             if "create" in config:
                 args = config.get("args")
@@ -90,7 +96,9 @@ class QueuedApplication(Logged):
             #print("loadApp: removing modules:", sorted(list(extra_modules)))
             for m in extra_modules:
                 del sys.modules[m]
-
+            for n in set(os.environ.keys()) - set(saved_environ.keys()):
+                del os.environ[n]
+            os.environ.update(saved_environ)
         
     def accept(self, request):
         header = request.HTTPHeader
