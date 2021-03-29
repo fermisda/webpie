@@ -53,7 +53,7 @@ class QueuedApplication(Logged):
     def __init__(self, config, logger=None):
         
         self.Config = config
-        self.Name = config["name"]
+        self.Name = config["instance"]
         Logged.__init__(self, f"[app {self.Name}]", logger, debug=True)
         self.Prefix = config.get("prefix", "/")
         self.ReplacePrefix = config.get("replace_prefix")
@@ -145,14 +145,20 @@ class MultiServer(PyThread, Logged):
             port = cfg["port"]
             apps = []
             for app_cfg in cfg["apps"]:
-                template = templates.get(app_cfg.get("template", "*"))
-                if template is not None:
-                    c = {}
-                    c.update(template)
-                    c.update(app_cfg)
-                    app_cfg = expand(c)
-                #print("reconfigure: app_cfg:", app_cfg)
-                apps.append(QueuedApplication(app_cfg, self.Logger))
+                if "template" in app_cfg:
+                    template = templates.get(app_cfg.get("template", "*"))
+                    if template is not None:
+                        c = {}
+                        c.update(template)
+                        c.update(app_cfg)
+                        app_cfg = expand(c)
+                    instances = app_cfg.get("instances", [app_cfg.get("instance")])
+                    for instance in instances:
+                        c = app_cfg.copy()
+                        c["instance"] = instance
+                        apps.append(QueuedApplication(expland(c), self.Logger))
+                else:
+                    apps.append(QueuedApplication(expland(app_cfg), self.Logger))
             app_list = ",".join(a.Name for a in apps)
             srv = self.ServersByPort.get(port)
             if srv is None:
