@@ -65,7 +65,7 @@ class QueuedApplication(Logged):
         
     def loadApp(self, config):
         saved_path = sys.path[:]
-        saved_modules = sys.modules.copy()
+        saved_modules = set(sys.modules.keys())
         try:
             args = None
             fname = config["file"]
@@ -86,7 +86,11 @@ class QueuedApplication(Logged):
             return app
         finally:
             sys.path = saved_path
-            sys.modules = saved_modules
+            extra_modules = set(sys.modules.keys()) - set(saved_modules)
+            #print("loadApp: removing modules:", sorted(list(extra_modules)))
+            for m in extra_modules:
+                del sys.modules[m]
+
         
     def accept(self, request):
         header = request.HTTPHeader
