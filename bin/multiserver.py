@@ -65,6 +65,7 @@ class QueuedApplication(Logged):
         
     def loadApp(self, config):
         saved_path = sys.path[:]
+        saved_modules = sys.modules.copy()
         try:
             args = None
             fname = config["file"]
@@ -85,6 +86,7 @@ class QueuedApplication(Logged):
             return app
         finally:
             sys.path = saved_path
+            sys.modules = saved_modules
         
     def accept(self, request):
         header = request.HTTPHeader
