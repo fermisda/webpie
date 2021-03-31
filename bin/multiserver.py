@@ -99,7 +99,8 @@ class QueuedApplication(Primitive, Logged):
 
             max_workers = config.get("max_workers", 5)
             queue_capacity = config.get("queue_capacity", 10)
-            self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity)
+            self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity,
+                delegate=self)
             self.log("(re)configured")
 
         finally:
@@ -111,8 +112,10 @@ class QueuedApplication(Primitive, Logged):
             for n in set(os.environ.keys()) - set(saved_environ.keys()):
                 del os.environ[n]
             os.environ.update(saved_environ)
+            
+    def taskFailed(self, queue, task, exc_type, exc_value, tb):
+        self.log_error("request failed:", "\n".join(traceback.format_exception(exc_type, exc_value, tb)))
 
-        
     def accept(self, request):
         header = request.HTTPHeader
         uri = header.URI
