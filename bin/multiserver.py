@@ -129,6 +129,7 @@ class MultiServer(PyThread, Logged):
         self.debug("debug is enabled")
     
     def reconfigure(self):
+        self.log("reconfigure...")
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
         templates = config.get("templates", {})
@@ -156,9 +157,11 @@ class MultiServer(PyThread, Logged):
                     for instance in instances:
                         c = app_cfg.copy()
                         c["instance"] = instance
-                        apps.append(QueuedApplication(expland(c), self.Logger))
+                        c = expand(c)
+                        #print("expanded config:", c)
+                        apps.append(QueuedApplication(c, self.Logger))
                 else:
-                    apps.append(QueuedApplication(expland(app_cfg), self.Logger))
+                    apps.append(QueuedApplication(expand(app_cfg), self.Logger))
             app_list = ",".join(a.Name for a in apps)
             srv = self.ServersByPort.get(port)
             if srv is None:
