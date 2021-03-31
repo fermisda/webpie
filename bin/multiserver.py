@@ -187,19 +187,10 @@ class MultiServer(PyThread, Logged):
                     for instance in instances:
                         c = app_cfg.copy()
                         c["instance"] = instance
-<<<<<<< HEAD
                         apps.append(QueuedApplication(expand(c), self.Logger))
                 else:
                     apps.append(QueuedApplication(expand(app_cfg), self.Logger))
             app_list = ",".join(a.Instance for a in apps)
-=======
-                        c = expand(c)
-                        #print("expanded config:", c)
-                        apps.append(QueuedApplication(c, self.Logger))
-                else:
-                    apps.append(QueuedApplication(expand(app_cfg), self.Logger))
-            app_list = ",".join(a.Name for a in apps)
->>>>>>> 76b7a361e5d75c3d49578c7d36814ea82c423770
             srv = self.ServersByPort.get(port)
             if srv is None:
                 srv = HTTPServer.from_config(cfg, apps, logger=self.Logger)
