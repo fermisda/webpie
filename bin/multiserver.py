@@ -48,22 +48,29 @@ class RequestTask(RequestProcessor, Task):
         Task.__init__(self, name=f"[RequestTask {request.Id}]")
         RequestProcessor.__init__(self, wsgi_app, request, logger)
 
-class QueuedApplication(Logged):
+class QueuedApplication(Primitive, Logged):
     
     def __init__(self, config, logger=None):
-        
+        self.Instance = config["instance"]
+        Primitive.__init__(self, name=f"[app {self.Instance}]")        
+        Logged.__init__(self, f"[app {self.Instance}]", logger, debug=True)
+        self.configure(config)
+
+    @synchronized
+    def configure(self, config=None):
+        config = config or self.Config
         self.Config = config
-        self.Name = config["instance"]
-        Logged.__init__(self, f"[app {self.Name}]", logger, debug=True)
+
+        reload_files = config.get("touch_reload", [])
+        if isinstance(reload_files, str):
+            reload_files = [reload_files]
+
+        self.ReloadFileTimestamps = {path: self.mtime(path) for path in reload_files}
+
         self.Prefix = config.get("prefix", "/")
         self.ReplacePrefix = config.get("replace_prefix")
         self.Timeout = config.get("timeout", 10)
-        max_workers = config.get("max_workers", 5)
-        queue_capacity = config.get("queue_capacity", 10)
-        self.loadApp(self.Config)
-        self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity)
-        
-    def loadApp(self, config):
+
         saved_path = sys.path[:]
         saved_modules = set(sys.modules.keys())
         saved_environ = os.environ.copy()
@@ -89,7 +96,12 @@ class QueuedApplication(Logged):
                 app = g[config.get("application", "application")]
             self.AppArgs = args
             self.WSGIApp = app
-            return app
+
+            max_workers = config.get("max_workers", 5)
+            queue_capacity = config.get("queue_capacity", 10)
+            self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity)
+            self.log("(re)configured")
+
         finally:
             sys.path = saved_path
             extra_modules = set(sys.modules.keys()) - set(saved_modules)
@@ -99,6 +111,7 @@ class QueuedApplication(Logged):
             for n in set(os.environ.keys()) - set(saved_environ.keys()):
                 del os.environ[n]
             os.environ.update(saved_environ)
+
         
     def accept(self, request):
         header = request.HTTPHeader
@@ -110,11 +123,28 @@ class QueuedApplication(Logged):
             if self.ReplacePrefix:
                 uri = self.ReplacePrefix + uri
             header.replaceURI(uri)
-            request.AppName = self.Name
+            request.AppName = self.Instance
             self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
             return True
         else:
             return False
+            
+    def mtime(self, path):
+        try:    return os.path.getmtime(path)
+        except: return None
+
+    def reloadIfNeeded(self):
+        for path, old_timestamp in self.ReloadFileTimestamps.items():
+            mt = self.mtime(path)
+            if mt is not None and mt != old_timestamp:
+                ct = time.ctime(mt)
+                self.log(f"file {path} was modified at {ct}")
+                break
+        else:
+            return False
+        self.configure()
+        
+            
             
 class MultiServer(PyThread, Logged):
             
@@ -156,10 +186,10 @@ class MultiServer(PyThread, Logged):
                     for instance in instances:
                         c = app_cfg.copy()
                         c["instance"] = instance
-                        apps.append(QueuedApplication(expland(c), self.Logger))
+                        apps.append(QueuedApplication(expand(c), self.Logger))
                 else:
-                    apps.append(QueuedApplication(expland(app_cfg), self.Logger))
-            app_list = ",".join(a.Name for a in apps)
+                    apps.append(QueuedApplication(expand(app_cfg), self.Logger))
+            app_list = ",".join(a.Instance for a in apps)
             srv = self.ServersByPort.get(port)
             if srv is None:
                 srv = HTTPServer.from_config(cfg, apps, logger=self.Logger)
@@ -184,6 +214,11 @@ class MultiServer(PyThread, Logged):
             time.sleep(5)
             if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
                 self.reconfigure()
+            else:
+                for server in self.Servers:
+                    for app in server.Apps:
+                        if isinstance(app, QueuedApplication):
+                            app.reloadIfNeeded()
                 
     def ___join(self):
         while self.Servers:
