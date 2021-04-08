@@ -412,7 +412,8 @@ class RequestReader(Task, Logged):
                     dispatched = app is not None
         finally:
             if not dispatched:
-                csock.sendall(b"HTTP/1.1 404 Not found\n\n")
+                try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
+                except: pass
                 request.close()
             self.SocketWrapper = self.Dispatcher = self.Logger = None
 

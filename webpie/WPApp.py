@@ -466,6 +466,9 @@ class WPStaticHandler(WPHandler):
         
         if ".." in relpath:
             return Response("Forbidden", status=403)
+
+        if relpath == "index":
+            self.redirect("./index.html")
             
         home = self.Root
         path = os.path.join(home, relpath)
