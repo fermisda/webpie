@@ -516,13 +516,17 @@ class WPApp(object):
 
     def __init__(self, root_class, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix=None):
-        if not isinstance(root_class, type) and callable(root_class):
+            prefix=None, replace_prefix="", default_path="index"):
+
+        import types
+
+        if isinstance(root_class, types.FunctionType):
             # if it's in fact a function, use LambdaHandlerFactory to wrap 
             # the function into a LambdaHandler
             root_class = LambdaHandlerFactory(root_class)
             
         enable_static = enable_static or (static_location is not None)
+        enable_static = False
         if static_location is None: static_location = "./static"
         self.StaticPath = static_path
         self.StaticLocation = static_location
@@ -536,7 +540,11 @@ class WPApp(object):
         self.Initialized = False
         self.Prefix = prefix
         self.ReplacePrefix = replace_prefix
-
+        self.HandlerParams = []
+        self.HandlerArgs = {}
+        self.DefaultPath = default_path
+        self.Environ = {}
+        
     def _app_lock(self):
         return self._AppLock
         
@@ -546,6 +554,12 @@ class WPApp(object):
     def __exit__(self, *params):
         return self._AppLock.__exit__(*params)
     
+    def environ(self, name):
+        return self.Environ.get(name, os.environ.get(name))
+        
+    def set_environ(self, name, value):
+        self.Environ[name] = value
+
     # override
     @app_synchronized
     def acceptIncomingTransfer(self, method, uri, headers):
@@ -623,33 +637,43 @@ class WPApp(object):
             
     def convertPath(self, path):
         if self.Prefix is not None:
-            matched = ""
-            ok = False
+            matched = None
             if path == self.Prefix:
                 matched = path
-                ok = True
             elif path.startswith(self.Prefix + '/'):
                 matched = self.Prefix
-                ok = True
                 
-            if not ok:
+            if matched is None:
                 return None
                 
             if self.ReplacePrefix is not None:
-                path = self.ReplacePrefix + (path[len(matched):] or "/")
+                path = self.ReplacePrefix + path[len(matched):]
+                
+            path = path or "/"
+            #print(f"converted to: [{path}]")
                 
         return path
                 
+    def handler_options(self, *params, **args):
+        self.HandlerParams = params
+        self.HandlerArgs = args
+        return self
+
     def __call__(self, environ, start_response):
-        #print 'app call ...'
         path = environ.get('PATH_INFO', '')
+        #print('app call: path:', path)
         environ["WebPie.original_path"] = path
         #print 'path:', path_down
-        
+
+
         path = self.convertPath(path)
         if path is None:
             return HTTPNotFound()(environ, start_response)
         
+        if (not path or path=="/") and self.DefaultPath is not None:
+            #print ("redirecting to", self.DefaultPath)
+            return HTTPFound(location=self.DefaultPath)(environ, start_response)
+            
         environ["PATH_INFO"] = path
 
         req = Request(environ)
@@ -660,6 +684,8 @@ class WPApp(object):
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.init()
             self.Initialized = True
+
+            self.init()
 
         resp = None
             
@@ -673,13 +699,18 @@ class WPApp(object):
                 resp = self.static(path[len(static_prefix):])
 
         if resp is None:
-            root = self.RootClass(req, self)
+            root = self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
             try:
                 return root.wsgi_call(environ, start_response)
             except:
                 resp = self.applicationErrorResponse(
                     "Uncaught exception", sys.exc_info())
         return resp(environ, start_response)
+        
+    def init(self):
+        # overraidable. will be called once after self.ScriptName, self.ScriptHome, self.Script are initialized
+        # it is good idea to init Jinja environment here
+        pass
         
     def jinja_globals(self):
         # override me

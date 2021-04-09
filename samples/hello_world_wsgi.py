@@ -7,4 +7,4 @@ class Greeter(WPHandler):
     def hello(self, request, relpath):             
         return "Hello, World!\n"                    
 
-application = Greeter(MyHandler)                      # 1
+application = WPApp(Greeter)
