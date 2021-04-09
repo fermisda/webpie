@@ -1,0 +1,122 @@
+logger:
+    file: logs/multiserver.log
+pid_file:        multiserver.pid
+
+templates:
+    qe:
+                python_path:
+                    - ./qengine
+                file: qengine/SQEngineApp.py
+                create: create_application
+                max_connections: 5
+                queue_capacity: 5
+                args: cfg/%(instance).yaml
+                touch_reload:
+                    - cfg/%(instance).yaml
+                    - qengine/SQEngineApp.py
+    mnvcon:
+                prefix: /%(instance)/app/
+                python_path:
+                    - ./mnvcon_webserver
+                file: mnvcon_webserver/Server.py
+                create: create_application
+                args: cfg/%(instance).cfg
+                max_connections: 10
+                queue_capacity: 5
+                touch_reload:
+                    - cfg/%(instance).cfg
+                    - mnvcon_webserver/Server.py
+    condb:
+                prefix: /%(instance)/app/
+                python_path:
+                    - ./condb
+                file: condb/ConDBServerApp.py
+                create: create_application
+                args: cfg/%(instance).cfg
+                max_connections: 10
+                queue_capacity: 5
+                env:
+                    JINJA_TEMPLATES_LOCATION: ./condb
+                touch_reload:
+                    - condb/ConDBServerApp.py
+                    - cfg/%(instance).cfg
+    ucondb:
+                product: ./ucondb
+                prefix: /%(instance)/app/
+                python_path:
+                    - "%(product)"
+                file: "%(product)/ServerApp.py"
+                create: create_application
+                args: cfg/%(instance).cfg
+                max_connections: 10
+                queue_capacity: 5
+                env:
+                    JINJA_TEMPLATES_LOCATION: "%(product)"
+                    UCONDB_CFG: cfg/%(instance).cfg
+                touch_reload:
+                    - cfg/%(instance).cfg
+                    - "%(product)/ServerApp.py"
+
+servers:
+    -   port:   9094
+        apps:
+            # UConDB
+            - 
+                template: ucondb
+                instances:
+                        - icarus_off_ucon_prod
+                        - icarus_on_ucon_prod
+                        - sbnd_off_ucon_prod
+                        - sbnd_on_ucon_prod
+                        - sbnd_ucon_dev
+                        - protodune_ucon_prod
+            # ConDB
+            -
+                template: condb
+                instances:
+                    - lariat_con_prod
+                    - lariat_con_dev
+                    - dune_con_prod
+
+            # Query engine
+            - 
+                instance: uboone_qe
+                template: qe
+                prefix: /QE/uboone/
+            - 
+                instance: dune_qe
+                template: qe
+                prefix: /QE/dune/
+            - 
+                instance: hw_qe
+                template: qe
+                prefix: /QE/hw/app/SQ/
+            - 
+                instance: mu2e_qe_dev
+                template: qe
+                prefix: /QE/mu2e/dev/app/SQ/
+            - 
+                instance: mu2e_qe_prod
+                template: qe
+                prefix: /QE/mu2e/prod/app/SQ/
+            - 
+                instance: lariat_qe_prod
+                template: qe
+                prefix: /QE/lariat_prod/
+            - 
+                instance: gm2_qe_dev
+                template: qe
+                prefix: /QE/gm2/dev/app/SQ/
+            #
+            # Conditions DB Minerva style
+            #
+            - 
+                name: mnvcon_prd
+                template: mnvcon
+                instances:
+                    - mnvcon_prd
+                    - uboonecon_prod
+                    - uboonecon_dev
+                    - gm2_con_prod
+                    - gm2_con_dev
+                    - emphatic_con_prod
