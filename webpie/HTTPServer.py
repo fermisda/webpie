@@ -13,19 +13,16 @@ from .py3 import PY2, PY3, to_str, to_bytes
 class BodyFile(object):
     
     def __init__(self, buf, sock, length):
+        #print("BodyFile: buf:", buf)
         self.Buffer = buf
         self.Sock = sock
         self.Remaining = length
         
     def get_chunk(self, n):
+        #print("get_chunk: Buffer:", self.Buffer)
         if self.Buffer:
-            chunk = self.Buffer[0]
-            if len(chunk) > n:
-                out = chunk[:n]
-                self.Buffer[0] = chunk[n:]
-            else:
-                out = chunk
-                self.Buffer = self.Buffer[1:]
+            out = self.Buffer[:n]
+            self.Buffer = self.Buffer[n:]
         elif self.Sock is not None:
             out = self.Sock.recv(n)
             if not out: self.Sock = None
@@ -63,14 +60,12 @@ class HTTPHeader(object):
         self.Method = None
         self.Protocol = None
         self.URI = None
-        self.Path = None
-        self.Query = ""
         self.OriginalURI = None
         self.Headers = {}
         self.Raw = b""
         self.Buffer = b""
         self.Complete = False
-        self.Error = False
+        self.Error = None
         
     def __str__(self):
         return "HTTPHeader(headline='%s', status=%s)" % (self.Headline, self.StatusCode)
@@ -149,10 +144,7 @@ class HTTPHeader(object):
             else:
                 self.Method = words[0].upper()
                 self.Protocol = words[2].upper()
-                self.Path = self.URI = self.OriginalURI = uri = words[1]
-                if '?' in uri:
-                    # detach query part
-                    self.Path, self.Query = uri.split("?", 1)
+                self.URI = self.OriginalURI = words[1]
                     
             for l in lines[1:]:
                 if not l:   continue
@@ -163,6 +155,15 @@ class HTTPHeader(object):
             self.Headers = headers
         self.Buffer = b""
         return True, False, rest
+
+    def path(self):
+        return self.URI.split("?",1)[0]
+
+    def query(self):
+        if '?' in self.URI:
+             return self.URI.split("?",1)[1]
+        else:
+             return ""
 
     def removeKeepAlive(self):
         if "Connection" in self.Headers:
@@ -199,7 +200,8 @@ class RequestProcessor(Logged):
         self.App = wsgi_app
         self.Request = request
         self.OutBuffer = ""
-        Logged.__init__(self, f"[request {request.Id}]", logger)
+        self.ResponseStatus = None
+        Logged.__init__(self, request.Id, logger)
         
     def parseQuery(self, query):
         out = {}
@@ -229,10 +231,10 @@ class RequestProcessor(Logged):
         
         env = dict(
             REQUEST_METHOD = header.Method.upper(),
-            PATH_INFO = header.Path,
+            PATH_INFO = header.path(),
             SCRIPT_NAME = "",
             SERVER_PROTOCOL = header.Protocol,
-            QUERY_STRING = header.Query
+            QUERY_STRING = header.query()
         )
         env["wsgi.url_scheme"] = "http"
 
@@ -245,7 +247,7 @@ class RequestProcessor(Logged):
         if header.Headers.get("Expect") == "100-continue":
             csock.sendall(b'HTTP/1.1 100 Continue\n\n')
                 
-        env["query_dict"] = self.parseQuery(header.Query)
+        env["query_dict"] = self.parseQuery(header.query())
         
         #print ("processRequest: env={}".format(env))
         body_length = None
@@ -268,13 +270,16 @@ class RequestProcessor(Logged):
         out = []
         
         try:
+            #print("env:")
+            #for k, v in env.items():
+            #    print(k,":",v)
             out = self.App(env, self.start_response)    
         except:
-            self.debug("error in wsgi_app: %s" % (traceback.format_exc(),))
+            self.log_error("error in wsgi_app: %s" % (traceback.format_exc(),))
             self.start_response("500 Error", 
                             [("Content-Type","text/plain")])
             self.OutBuffer = error = traceback.format_exc()
-            self.log_error(self.CAddr, error)
+            self.log_error(request.CAddr, error)
         
         if self.OutBuffer:      # from start_response
             csock.sendall(to_bytes(self.OutBuffer))
@@ -285,13 +290,19 @@ class RequestProcessor(Logged):
             line = to_bytes(line)
             try:    csock.sendall(line)
             except Exception as e:
-                self.log_error(self.Request.CAddr, "error sending body: %s" % (e,))
+                self.log_error(request.CAddr, "error sending body: %s" % (e,))
                 break
             byte_count += len(line)
         else:
-            self.log(self.Request.CAddr, header.Method, header.URI, self.ResponseStatus, byte_count)
+            self.log('%s:%s :%s %s %s -> %s %s %s %s' % 
+                (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                    header.Method, header.OriginalURI, 
+                    request.AppName, header.path(), 
+                    self.ResponseStatus, byte_count
+                )
+            )
 
-        csock.close()
+        request.close()
         self.debug("done. socket closed")
 
     def start_response(self, status, headers):
@@ -313,176 +324,225 @@ class DirectApplication(Logged):
         import importlib
         
         Logged.__init__(self, f"[app {app.__class__.__name__}]", logger)
+        self.Name = app.__class__.__name__
         self.WPApp = app
         
     def accept(self, request):
         p = RequestProcessor(self.WPApp, request, self.Logger)
+        request.AppName = self.Name
         p.run()
         return True
 
 class Request(object):
     
-    def __init__(self, rid, header, body, csock, caddr):
-        self.Id = rid
-        self.HTTPHeader = header
+    def __init__(self, port, csock, caddr):
+        self.Id = uid()
+        self.ServerPort = port
         self.CSock = csock
         self.CAddr = caddr
-        self.Body = body
-        self.SSLInfo = None     # for now
+        self.HTTPHeader = None
+        self.Body = b''
+        self.SSLInfo = None     
+        self.AppName = None
+        
+    def close(self):
+        if self.CSock is not None:
+            try:    self.CSock.close()
+            except: pass
+            self.CSock = None
+        self.SSLInfo = None
         
 class RequestReader(Task, Logged):
 
     MAXMSG = 100000
 
-    def __init__(self, cid, socket_wrapper, dispatcher, csock, caddr, timeout, logger):
+    def __init__(self, dispatcher, request, socket_wrapper, timeout, logger):
         Task.__init__(self)
-        self.CID = cid
-        Logged.__init__(self, f"[reader {self.CID}]", logger)
-        self.CAddr = caddr
-        self.CSock = csock
+        self.Request = request
+        Logged.__init__(self, f"[reader {request.Id}]", logger, debug=True)
         self.SocketWrapper = socket_wrapper
         self.Dispatcher = dispatcher
         self.Timeout = timeout
-        self.debug("created. client: %s:%s" % caddr)
         
     def __str__(self):
-        return "[reader %s]" % (self.CID, )
+        return "[reader %s]" % (self.Request.Id, )
         
-    def addToBody(self, data):
-        if PY3:   data = to_bytes(data)
-        #print ("addToBody:", data)
-        self.Body.append(data)
+    #def addToBody(self, data):
+    #    if PY3:   data = to_bytes(data)
+    #    #print ("addToBody:", data)
+    #    self.Body.append(data)
 
     def run(self):
         header = None
         body = b''
+        request = self.Request
+        csock = request.CSock
+        saved_timeout = csock.gettimeout() 
+        dispatched = False
         try:
-            self.debug("started")
+            #self.debug("started")
             self.Started = time.time()
-            self.CSock.settimeout(self.Timeout)        
-            try:
-                self.CSock, ssl_info = self.SocketWrapper.wrap(self.CSock)
-                self.debug("socket wrapped")
-            except Exception as e:
-                self.debug("Error wrapping socket: %s" % (e,))
-            else:
+            csock.settimeout(self.Timeout) 
+            error = False       
+            if self.SocketWrapper is not None:
+                try:
+                    csock, ssl_info = self.SocketWrapper.wrap(self.Request.CSock)
+                    self.Request.CSock = csock
+                    self.Request.SSLInfo = ssl_info
+                    self.debug("socket wrapped")
+                except Exception as e:
+                    self.debug("Error wrapping socket: %s" % (e,))
+                    error = True
+            self.debug("wrapped:", csock)
+            if not error:
                 header = HTTPHeader()
-                request_received, body = header.recv(self.CSock)
-        
+                request_received, body = header.recv(csock)
+                csock.settimeout(saved_timeout) 
+    
                 if not request_received or not header.is_valid() or not header.is_client():
                     # header not received - end
                     self.debug("request not received or invalid or not client request: %s" % (request,))
                     if header.Error:
-                        self.debug("request read error: %s" % (request.Error,))
-                    self.CSock.close()
+                        self.debug("request read error: %s" % (header.Error,))
                     return None
                 else:
-                    self.Dispatcher.dispatch(Request(self.CID, header, body, self.CSock, self.CAddr))
+                    request.HTTPHeader = header
+                    request.Body = body
+                    app = self.Dispatcher.dispatch(self.Request)
+                    dispatched = app is not None
         finally:
-            self.SocketWrapper = self.Logger = self.CSock = None
+            if not dispatched:
+                try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
+                except: pass
+                request.close()
+            self.SocketWrapper = self.Dispatcher = self.Logger = None
 
-class SocketWrapper(object):
+class SSLSocketWrapper(object):
      
     def __init__(self, config, certfile, keyfile, verify, ca_file, password):
-        self.SSLContext = None
-        if keyfile is not None or "https" in config:
-            import ssl
-            
-            keyfile = keyfile or config.get("key")
-            certfile = certfile or config.get("cert")
-            ca_file = ca_file or config.get("ca_cert")
-            verify = verify or config.get("verify", "optional")
-            password = password or config.get("password")
-            
-            self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-            self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
-            if ca_file is not None:
-                self.SSLContext.load_verify_locations(cafile=ca_file)
-            self.SSLContext.verify_mode = {
-                    "none":ssl.CERT_NONE,
-                    "optional":ssl.CERT_OPTIONAL,
-                    "required":ssl.CERT_REQUIRED
-                }[verify]
-            self.SSLContext.load_default_certs()
+        import ssl
+        
+        keyfile = keyfile or config.get("key")
+        certfile = certfile or config.get("cert")
+        ca_file = ca_file or config.get("ca_cert")
+        verify = verify or config.get("verify", "optional")
+        password = password or config.get("password")
+        
+        self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
+        if ca_file is not None:
+            self.SSLContext.load_verify_locations(cafile=ca_file)
+        self.SSLContext.verify_mode = {
+                "none":ssl.CERT_NONE,
+                "optional":ssl.CERT_OPTIONAL,
+                "required":ssl.CERT_REQUIRED
+            }[verify]
+        self.SSLContext.load_default_certs()
             
     def wrap(self, sock):
-        if self.SSLContext is not None:
-            ssl_socket = self.SSLContext.wrap_socket(sock, server_side=True)
-            return ssl_socket, ssl_socket
-        else:
-            return sock, None
-        
-        
-class Dispatcher(object):
-    
-    def __init__(self, apps):
-        self.Apps = apps
-        
-    def dispatch(self, request):
-        for app in self.Apps:
-            if app.accept(request):
-                return app
-        else:
-            request.CSock.sendall(b"HTTP/1.1 403 Not found\n\n")
-            request.CSock.close()
-            return None
-            
+        ssl_socket = self.SSLContext.wrap_socket(sock, server_side=True)
+        return ssl_socket, ssl_socket
+
 class HTTPServer(PyThread, Logged):
 
-    def __init__(self, port, apps, logger=None, config={}, max_connections = 100, 
+    def __init__(self, port, apps, sock=None, logger=None, max_connections = 100, 
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = None, debug=None,
                 certfile=None, keyfile=None, verify="none", ca_file=None, password=None
                 ):
         PyThread.__init__(self)
-        self.Port = config.get("port", port)
+        self.Port = port
+        self.Sock = sock
         assert self.Port is not None, "Port must be specified"
-        if logging and log_file is not None:
+        if logger is None and logging and log_file is not None:
             f = sys.stdout if log_file == "-" else open(log_file, "a")
             logger = Logger(f)
             #print("logs sent to:", f)
-        Logged.__init__(self, f"[server {self.Port}]", logger)
-        if isinstance(apps, WPApp):
-            my_apps = [DirectApplication(apps, self.Logger)]
-        else:
-            my_apps = [apps[sname] for sname in config["apps"]]
-        self.Dispatcher = Dispatcher(my_apps)
+        Logged.__init__(self, f"[server {self.Port}]", logger, debug=True)
         self.Logger = logger
-        self.Timeout = config.get("timeout", timeout)
-        max_readers = config.get("max_connections", max_connections)
-        queue_capacity = config.get("queue_capacity", max_queued)
-        self.RequestReaderQueue = TaskQueue(max_readers, capacity=queue_capacity, delegate=self)
+        self.Timeout = timeout
+        max_connections =  max_connections
+        queue_capacity = max_queued
+        self.RequestReaderQueue = TaskQueue(max_connections, capacity=queue_capacity, delegate=self)
+        self.SocketWrapper = SocketWrapper(certfile, keyfile, verify, ca_file, password) if keyfile else None
+        self.reconfigureApps(apps)
+        self.Stop = False
+        
+    @staticmethod
+    def from_config(config, apps, logger=None, logging=False, log_file=None, debug=None):
+        port = config["port"]
+        
+        timeout = config.get("timeout", 20.0)
+        max_connections = config.get("max_connections", 100)
+        queue_capacity = config.get("queue_capacity", 100)
 
-        self.SocketWrapper = SocketWrapper(config, certfile, keyfile, verify, ca_file, password)
+        # TLS
+        certfile = config.get("cert")
+        keyfile = config.get("key")
+        verify = config.get("verify")
+        ca_file = config.get("ca_file")
+        password = config.get("password")
+        
+        return HTTPServer(port, apps, logger=logger, max_connections=max_connections,
+                timeout = timeout, max_queued = queue_capacity, 
+                logging = logging, log_file=log_file, debug=debug,
+                certfile=certfile, keyfile=keyfile, verify=verify, ca_file=ca_file, password=password
+        )
         
     @synchronized
+    def reconfigureApps(self, apps):
+        if isinstance(apps, WPApp):
+            apps = [DirectApplication(apps, self.Logger)]
+        self.Apps = apps
+        
     def connectionCount(self):
         return len(self.Connections)    
-            
+
     def run(self):
-        self.Sock = socket(AF_INET, SOCK_STREAM)
-        self.Sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-        self.Sock.bind(('', self.Port))
-        self.Sock.listen(10)
-        while True:
+        if self.Sock is None:
+            # therwise use the socket supplied to the constructior
+            self.Sock = socket(AF_INET, SOCK_STREAM)
+            self.Sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+            self.Sock.bind(('', self.Port))
+            self.Sock.listen(10)
+        while not self.Stop:
             self.debug("--- accept loop port=%d start" % (self.Port,))
             csock = None
             caddr = ('-','-')
             try:
                 csock, caddr = self.Sock.accept()
-                cid = uid()
-                self.debug("connection %s accepted from %s:%s" % (cid, caddr[0], caddr[1]))
-                
-                reader = RequestReader(cid, self.SocketWrapper, self.Dispatcher, csock, caddr, self.Timeout, self.Logger)
+                request = Request(self.Port, csock, caddr)
+                self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
+                reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self.Logger)
                 self.RequestReaderQueue << reader
             except Exception as exc:
-                self.debug("connection processing error: %s" % (traceback.format_exc(),))
-                self.log_error(caddr, "Error processing connection: %s" % (exc,))
-                if csock is not None:
-                    try:    csock.close()
-                    except: pass
-            self.debug("--- accept loop port=%d end" % (self.Port,))
+                #print(exc)
+                if not self.Stop:
+                    self.debug("connection processing error: %s" % (traceback.format_exc(),))
+                    self.log_error(caddr, "Error processing connection: %s" % (exc,))
+                    if csock is not None:
+                        try:    csock.close()
+                        except: pass
+                self.debug("--- accept loop port=%d end" % (self.Port,))
+        if self.Stop:   self.debug("stopped")
+        try:    self.Sock.close()
+        except: pass
+        self.Sock = None
+        
+    @synchronized
+    def stop(self):
+        self.Stop = True
+        try:    self.Sock.close()
+        except: pass
+
+    @synchronized
+    def dispatch(self, request):
+        for app in self.Apps:
+            if app.accept(request):
+                return app
+        else:
+            return None
 
     def taskFailed(self, queue, task, exc_type, exc, tb):
         traceback.print_exception(exc_type, exc, tb)

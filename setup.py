@@ -30,15 +30,21 @@ setup(
     classifiers=[
         "Operating System :: POSIX",
         "Topic :: Internet :: WWW/HTTP :: WSGI :: Server",
+        "Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware",
+        "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+        "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
         "Programming Language :: Python",
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         "Development Status :: 5 - Production/Stable",
         "License :: OSI Approved :: BSD License",
         'Intended Audience :: Developers',
-        'Natural Language :: English',
-    ]
+    ],
+    entry_points = {
+            "console_scripts": [
+                "multiserver = bin.multiserver_ui:main",
+            ]
+        }
+    
 )

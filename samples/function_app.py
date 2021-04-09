@@ -6,5 +6,5 @@ def hello(request, relpath):
     who = relpath or "world"
     return "Hello, "+who, "text/plain"
 
-WPApp(reverse).run_server(8080)
+WPApp(hello).run_server(8080)
 

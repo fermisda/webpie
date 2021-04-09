@@ -466,6 +466,9 @@ class WPStaticHandler(WPHandler):
         
         if ".." in relpath:
             return Response("Forbidden", status=403)
+
+        if relpath == "index":
+            self.redirect("./index.html")
             
         home = self.Root
         path = os.path.join(home, relpath)
@@ -516,7 +519,8 @@ class WPApp(object):
 
     def __init__(self, root_class, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix="", default_path="index"):
+            prefix=None, replace_prefix="", default_path="index",
+            environ={}):
 
         import types
 
@@ -544,6 +548,7 @@ class WPApp(object):
         self.HandlerArgs = {}
         self.DefaultPath = default_path
         self.Environ = {}
+        self.Environ.update(environ)
         
     def _app_lock(self):
         return self._AppLock
@@ -554,12 +559,6 @@ class WPApp(object):
     def __exit__(self, *params):
         return self._AppLock.__exit__(*params)
     
-    def environ(self, name):
-        return self.Environ.get(name, os.environ.get(name))
-        
-    def set_environ(self, name, value):
-        self.Environ[name] = value
-
     # override
     @app_synchronized
     def acceptIncomingTransfer(self, method, uri, headers):
@@ -606,35 +605,6 @@ class WPApp(object):
         return Response(text, status = '500 Application Error')
 
 
-    # ----- deprecated. Use WPStaticHandler -------
-    def static(self, relpath):
-        #print("WPApp.static: relpath:", relpath)
-        while ".." in relpath:
-            relpath = relpath.replace("..",".")
-        home = self.StaticLocation
-        #print("WPApp.static: home:", home)
-        path = os.path.join(home, relpath)
-        #print ("static: path:", path)
-        try:
-            st_mode = os.stat(path).st_mode
-            if not stat.S_ISREG(st_mode):
-                #print "not a regular file"
-                return Response("Not found", status=404)
-        except:
-            return Response("Not found", status=404)
-
-        ext = path.rsplit('.',1)[-1]
-        mime_type = self.MIME_TYPES_BASE.get(ext, "text/html")
-
-        def read_iter(f):
-            while True:
-                data = f.read(100000)
-                if not data:    break
-                yield data
-        #print "returning response..."
-        return Response(app_iter = read_iter(open(path, "rb")),
-            content_type = mime_type)
-            
     def convertPath(self, path):
         if self.Prefix is not None:
             matched = None
@@ -663,6 +633,7 @@ class WPApp(object):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
         environ["WebPie.original_path"] = path
+        environ.update(self.Environ)
         #print 'path:', path_down
 
 
