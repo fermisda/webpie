@@ -560,11 +560,12 @@ class WPApp(object):
         return self._AppLock.__exit__(*params)
     
     # override
-    def reload(self):
-        pass
+    @app_synchronized
+    def acceptIncomingTransfer(self, method, uri, headers):
+        return True
 
-    def environ(self, name, default=None):
-        return self.Environ.get(name, default)
+    def init(self):
+        pass
 
     @app_synchronized
     def initJinjaEnvironment(self, tempdirs = [], filters = {}, globals = {}):
@@ -652,6 +653,7 @@ class WPApp(object):
             self.Script = environ.get('SCRIPT_FILENAME', 
                         os.environ.get('UWSGI_SCRIPT_FILENAME'))
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
+            self.init()
             self.Initialized = True
 
             self.init()
