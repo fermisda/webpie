@@ -550,7 +550,10 @@ class WPApp(object):
     @app_synchronized
     def acceptIncomingTransfer(self, method, uri, headers):
         return True
-            
+
+    def init(self):
+        pass
+
     @app_synchronized
     def initJinjaEnvironment(self, tempdirs = [], filters = {}, globals = {}):
         # to be called by subclass
@@ -637,8 +640,6 @@ class WPApp(object):
                 
         return path
                 
-            
-
     def __call__(self, environ, start_response):
         #print 'app call ...'
         path = environ.get('PATH_INFO', '')
@@ -657,6 +658,7 @@ class WPApp(object):
             self.Script = environ.get('SCRIPT_FILENAME', 
                         os.environ.get('UWSGI_SCRIPT_FILENAME'))
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
+            self.init()
             self.Initialized = True
 
         resp = None
