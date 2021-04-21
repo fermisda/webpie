@@ -5,7 +5,7 @@ from pythreader import PyThread, synchronized, Task, TaskQueue, Primitive
 from webpie import Response
 from .uid import uid
 from .WPApp import WPApp
-from .logs import Logged
+from .logs import Logged, Logger
 
 from .py3 import PY2, PY3, to_str, to_bytes
         
@@ -448,16 +448,15 @@ class HTTPServer(PyThread, Logged):
     def __init__(self, port, apps, sock=None, logger=None, max_connections = 100, 
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
-                logging = False, log_file = None, debug=None,
+                logging = False, log_file = "-", debug=None,
                 certfile=None, keyfile=None, verify="none", ca_file=None, password=None
                 ):
         PyThread.__init__(self)
         self.Port = port
         self.Sock = sock
         assert self.Port is not None, "Port must be specified"
-        if logger is None and logging and log_file is not None:
-            f = sys.stdout if log_file == "-" else open(log_file, "a")
-            logger = Logger(f)
+        if logger is None and logging:
+            logger = Logger(log_file)
             #print("logs sent to:", f)
         Logged.__init__(self, f"[server {self.Port}]", logger, debug=True)
         self.Logger = logger
@@ -512,10 +511,7 @@ class HTTPServer(PyThread, Logged):
             caddr = ('-','-')
             try:
                 csock, caddr = self.Sock.accept()
-                request = Request(self.Port, csock, caddr)
-                self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
-                reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self.Logger)
-                self.RequestReaderQueue << reader
+                self.connection_accepted(csock, caddr)
             except Exception as exc:
                 #print(exc)
                 if not self.Stop:
@@ -529,6 +525,12 @@ class HTTPServer(PyThread, Logged):
         try:    self.Sock.close()
         except: pass
         self.Sock = None
+        
+    def connection_accepted(self, csock, caddr):
+        request = Request(self.Port, csock, caddr)
+        self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
+        reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self.Logger)
+        self.RequestReaderQueue << reader
         
     @synchronized
     def stop(self):

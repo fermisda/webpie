@@ -1,7 +1,6 @@
 import traceback, sys, time
-from .LogFile import LogFile, LogStream
 
-from pythreader import synchronized, Primitive
+from pythreader import synchronized, Primitive, LogFile, LogStream
 
 Debug = False
 
@@ -19,12 +18,14 @@ class Logger(Primitive):
         self.LogFile = log_file
         self.Debug = debug
         
-    @synchronized
     def log(self, who, *parts):
         #print("who:", who)
         #print("parts:", parts)
         if self.LogFile is not None:
             self.LogFile.log("%s: %s: %s" % (time.ctime(), who, " ".join([str(p) for p in parts])))
+            
+    def write(self, msg):
+        self.LogFile.write(msg)
         
     debug = log
 
