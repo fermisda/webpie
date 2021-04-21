@@ -1,4 +1,4 @@
-FILES = multiserver.py 
+FILES = multiserver.py mp_multiserver.py mp_config_sample.yaml
 DST_DIR = $(BUILD_DIR)/bin
 
 build: $(DST_DIR)
