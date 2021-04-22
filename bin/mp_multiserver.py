@@ -7,8 +7,8 @@ import re, socket
 
 setproctitle = None
 
-#try:    from setproctitle import setproctitle
-#except: pass
+try:    from setproctitle import setproctitle
+except: pass
 
 subst = re.compile("(%\((\w+)\))")
 
@@ -241,8 +241,8 @@ class MultiServerSubprocess(Process, Logged):
     CheckConfigInterval = 5.0
         
     def run(self):
-        #if setproctitle is not None:
-        #    setproctitle("multiserver/%s/subprocess" % (self.Port,))
+        if setproctitle is not None:
+            setproctitle("multiserver %s worker" % (self.Port,))
         pid = os.getpid()
         self.LogName = f"MultiServerSubprocess({pid})"
         self.reconfigure()
@@ -350,8 +350,8 @@ class MPMultiServer(PyThread, Logged):
         self.log("subprocesses running now:", len(self.Subprocesses))
         
     def run(self):
-        #if setproctitle is not None:
-        #    setproctitle("multiserver/%s/master" % (self.Port,))
+        if setproctitle is not None:
+            setproctitle("multiserver %s master" % (self.Port,))
         while not self.Stop:
             time.sleep(5)
             if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
