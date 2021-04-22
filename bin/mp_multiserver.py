@@ -56,7 +56,8 @@ class RequestTask(RequestProcessor, Task):
 class Service(Primitive, Logged):
     
     def __init__(self, config, logger=None):
-        name = config["service_name"]
+        name = config["name"]
+        self.ServiceName = name
         Primitive.__init__(self, name=f"[app {name}]")        
         Logged.__init__(self, f"[app {name}]", logger, debug=True)
         self.configure(config)
@@ -136,6 +137,12 @@ class Service(Primitive, Logged):
             return True
         else:
             return False
+    
+    def close(self):
+        self.RequestQueue.hold()
+    
+    def join(self):
+        self.RequestQueue.join()
             
     def mtime(self, path):
         try:    return os.path.getmtime(path)
@@ -196,6 +203,7 @@ class MultiServerSubprocess(Process, Logged):
         self.Services = []
         self.MasterSide = True
         self.Stop = False
+        self.MasterPID = os.getpid()
 
     def reconfigure(self):
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
@@ -213,20 +221,19 @@ class MultiServerSubprocess(Process, Logged):
                     c.update(template)
                     c.update(svc_cfg)
                     svc_cfg = expand(c)
-                service_names = svc_cfg.get("names", [svc_cfg.get("name")])
-                for name in service_names:
+                names = svc_cfg.get("names", [svc_cfg.get("name")])
+                for name in names:
                     c = svc_cfg.copy()
-                    c["service_name"] = name
                     service_list.append(Service(expand(c), self.Logger))
             else:
                 service_list.append(Service(expand(svc_cfg), self.Logger))
-        service_names = ",".join(s.Name for s in service_list)
+        names = ",".join(s.Name for s in service_list)
         if self.Server is None:
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
-            self.log(f"server created with services: {service_names}")
+            self.log(f"server created with services: {names}")
         else:
             self.Server.reconfigureApps(service_list)
-            self.log(f"server reconfigured with services: {service_names}")
+            self.log(f"server reconfigured with services: {names}")
         self.Services = service_list
         self.log("reconfigured")
 
@@ -244,6 +251,12 @@ class MultiServerSubprocess(Process, Logged):
         
         while not self.Stop:
             
+            # see if the parent process is still alive
+            try:    os.kill(self.MasterPID, 0)
+            except:
+                print("master process died")
+                break
+
             try:    csock, caddr = self.Sock.accept()
             except socket.timeout:
                 pass
@@ -267,6 +280,12 @@ class MultiServerSubprocess(Process, Logged):
                             svc.reloadIfNeeded()
             last_check_config = time.time()
             
+        self.Server.close()
+        self.Server.join()
+        for svc in self.Services:
+            svc.close()
+            svc.join()
+        
     def stop(self):
         if self.MasterSide:
             self.ConnectionToSubprocess.send("stop")
@@ -287,11 +306,13 @@ class MPMultiServer(PyThread, Logged):
         self.ReconfiguredTime = 0
         self.Subprocesses = []
         self.Sock = None
+        self.Stop = False
         self.MPLogger = MPLogger(logger) if logger is not None else None
         self.MPLogger.start()
         self.reconfigure()
-    
-    def reconfigure(self):
+
+    @synchronized
+    def reconfigure(self, *ignore):
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
 
@@ -330,12 +351,40 @@ class MPMultiServer(PyThread, Logged):
     def run(self):
         if setproctitle is not None:
             setproctitle("multiserver/%s/master" % (self.Port,))
-        while True:
+        while not self.Stop:
             time.sleep(5)
             if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
                 self.reconfigure()
+                
+    @synchronized
+    def child_died(self, *ignore):
+        #print("child died")
+        n_died = 0
+        alive = []
+        for p in self.Subprocesses:
+            if not p.is_alive():
+                self.log("subprocess died with status", p.exitcode)
+                p.close()
+                n_died += 1
+            else:
+                alive.append(p)
+        self.Subprocesses = alive
+        if n_died and not self.Stop:
+            time.sleep(5)   # do not restart subprocesses too often
+            for _ in range(n_died):
+                time.sleep(1)   # do not restart subprocesses too often
+                p = MultiServerSubprocess(self.Port, self.Sock, self.ConfigFile, logger=self.MPLogger)
+                p.start()
+                self.Subprocesses.append(p)
+                self.log("started new subprocess")
+                
+    @synchronized
+    def killme(self, *ignore):
+        self.log("INT signal received. Stopping subprocesses...")
+        self.Stop = True
+        for p in self.Subprocesses:
+            p.stop()
         
-
 Usage = """
 multiserver <config.yaml>
 """
@@ -368,7 +417,9 @@ def main():
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
     ms = MPMultiServer(config_file, logger)
-    s = SignalHandler(signal.SIGHUP, ms)
+    signal.signal(signal.SIGHUP, ms.reconfigure)
+    signal.signal(signal.SIGCHLD, ms.child_died)
+    signal.signal(signal.SIGINT, ms.killme)
     ms.start()
     ms.join()
 

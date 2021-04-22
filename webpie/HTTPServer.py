@@ -468,6 +468,13 @@ class HTTPServer(PyThread, Logged):
         self.reconfigureApps(apps)
         self.Stop = False
         
+    def close(self):
+        self.Stop = True
+        self.RequestReaderQueue.hold()
+
+    def join(self):
+        self.RequestReaderQueue.join()
+        
     @staticmethod
     def from_config(config, apps, logger=None, logging=False, log_file=None, debug=None):
         port = config["port"]
