@@ -56,7 +56,7 @@ class RequestTask(RequestProcessor, Task):
 class Service(Primitive, Logged):
     
     def __init__(self, config, logger=None):
-        name = config["name"]
+        name = config["service_name"]
         Primitive.__init__(self, name=f"[app {name}]")        
         Logged.__init__(self, f"[app {name}]", logger, debug=True)
         self.configure(config)
@@ -168,7 +168,7 @@ class MPLogger(PyThread):
         from queue import Empty
         while True:
             msg = self.Queue.get()
-            self.Logger.write(msg)
+            self.Logger.write(msg+"\n")
     
     def log(self, who, *parts):
         #
@@ -184,8 +184,8 @@ class MPLogger(PyThread):
 class MultiServerSubprocess(Process, Logged):
     
     def __init__(self, port, sock, config_file, logger=None):
-        Process.__init__(self)
-        print("MultiServerSubprocess.__init__: logger:", logger)
+        Process.__init__(self, daemon=True)
+        #print("MultiServerSubprocess.__init__: logger:", logger)
         Logged.__init__(self, "MultiServerSubprocess", logger)
         self.Sock = sock
         self.Port = port
@@ -198,7 +198,6 @@ class MultiServerSubprocess(Process, Logged):
         self.Stop = False
 
     def reconfigure(self):
-        self.log("reconfigure...")
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
         
@@ -218,7 +217,7 @@ class MultiServerSubprocess(Process, Logged):
                 for name in service_names:
                     c = svc_cfg.copy()
                     c["service_name"] = name
-                    apps.append(Service(expand(c), self.Logger))
+                    service_list.append(Service(expand(c), self.Logger))
             else:
                 service_list.append(Service(expand(svc_cfg), self.Logger))
         service_names = ",".join(s.Name for s in service_list)
@@ -276,7 +275,6 @@ class MultiServerSubprocess(Process, Logged):
             
     def request_reconfigure(self):
         self.ConnectionToSubprocess.send("reconfigure")
-        self.log("reconfigure requested")
             
 class MPMultiServer(PyThread, Logged):
             
@@ -294,7 +292,6 @@ class MPMultiServer(PyThread, Logged):
         self.reconfigure()
     
     def reconfigure(self):
-        self.log("reconfigure...")
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
 
