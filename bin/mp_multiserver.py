@@ -224,6 +224,7 @@ class MultiServerSubprocess(Process, Logged):
                 names = svc_cfg.get("names", [svc_cfg.get("name")])
                 for name in names:
                     c = svc_cfg.copy()
+                    c["name"] = name
                     service_list.append(Service(expand(c), self.Logger))
             else:
                 service_list.append(Service(expand(svc_cfg), self.Logger))
@@ -364,7 +365,6 @@ class MPMultiServer(PyThread, Logged):
         for p in self.Subprocesses:
             if not p.is_alive():
                 self.log("subprocess died with status", p.exitcode)
-                p.close()
                 n_died += 1
             else:
                 alive.append(p)
