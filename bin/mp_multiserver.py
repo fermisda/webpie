@@ -356,9 +356,10 @@ class MPMultiServer(PyThread, Logged):
             time.sleep(5)
             if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
                 self.reconfigure()
+            self.check_children()
                 
     @synchronized
-    def child_died(self, *ignore):
+    def check_children(self, *ignore):
         #print("child died")
         n_died = 0
         alive = []
@@ -370,7 +371,7 @@ class MPMultiServer(PyThread, Logged):
                 alive.append(p)
         self.Subprocesses = alive
         if n_died and not self.Stop:
-            time.sleep(5)   # do not restart subprocesses too often
+            #time.sleep(5)   # do not restart subprocesses too often
             for _ in range(n_died):
                 time.sleep(1)   # do not restart subprocesses too often
                 p = MultiServerSubprocess(self.Port, self.Sock, self.ConfigFile, logger=self.MPLogger)
@@ -418,7 +419,7 @@ def main():
         open(config["pid_file"], "w").write(str(os.getpid()))
     ms = MPMultiServer(config_file, logger)
     signal.signal(signal.SIGHUP, ms.reconfigure)
-    signal.signal(signal.SIGCHLD, ms.child_died)
+    #signal.signal(signal.SIGCHLD, ms.child_died)
     signal.signal(signal.SIGINT, ms.killme)
     ms.start()
     ms.join()
