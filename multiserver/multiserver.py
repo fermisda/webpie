@@ -1,6 +1,6 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
-from webpie import Logged, Logger, HTTPServer, RequestProcessor
+from webpie import Logged, Logger, HTTPServer, RequestProcessor, expand
 from multiprocessing import Process, Pipe
 
 import re, socket
@@ -10,6 +10,8 @@ setproctitle = None
 try:    from setproctitle import setproctitle
 except: pass
 
+
+""" comment out
 subst = re.compile("(%\((\w+)\))")
 
 def expand_str(text, vars):
@@ -45,6 +47,7 @@ def expand(item, vars={}):
     elif isinstance(item, list):
         item = [expand(x, vars) for x in item]
     return item
+"""
             
 class RequestTask(RequestProcessor, Task):
     
@@ -60,6 +63,7 @@ class Service(Primitive, Logged):
         self.ServiceName = name
         Primitive.__init__(self, name=f"[app {name}]")        
         Logged.__init__(self, f"[app {name}]", logger, debug=True)
+        self.Config = None
         self.configure(config)
 
     @synchronized

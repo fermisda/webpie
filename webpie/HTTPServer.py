@@ -319,7 +319,7 @@ class DirectApplication(Logged):
     
     def __init__(self, app, logger=None):
         
-        assert isinstance(app, WPApp)
+        #assert isinstance(app, WPApp)
         
         import importlib
         
@@ -498,9 +498,9 @@ class HTTPServer(PyThread, Logged):
         
     @synchronized
     def reconfigureApps(self, apps):
-        if isinstance(apps, WPApp):
-            apps = [DirectApplication(apps, self.Logger)]
-        self.Apps = apps
+        if not isinstance(apps, list):
+            apps = [apps]
+        self.Apps = [DirectApplication(app, self.Logger) for app in apps]
         
     def connectionCount(self):
         return len(self.Connections)    

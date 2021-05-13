@@ -632,7 +632,8 @@ class WPApp(object):
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
-        environ["WebPie.original_path"] = path
+        if not "WebPie.original_path" in environ:
+            environ["WebPie.original_path"] = path
         environ.update(self.Environ)
         #print 'path:', path_down
 
