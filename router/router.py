@@ -160,7 +160,7 @@ class Router(PyThread, Logged):
         while not self.Stop:
             time.sleep(5)
             mt = mtime(self.ConfigFile)
-            if mt > self.ConfigMTime:
+            if mt is not None and mt > self.ConfigMTime:
                 self.log("config file modified. reloading.")
                 self.ConfigMTime = mt
                 self.Config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
