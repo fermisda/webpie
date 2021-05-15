@@ -3,10 +3,10 @@ from .WPSessionApp import WPSessionApp
 from .uid import uid
 from .HTTPServer import run_server, HTTPServer, RequestProcessor
 from .logs import Logger, Logged
-from .yaml_expand import expand
+from .yaml_expand import yaml_expand
 
 __all__ = [ "WPApp", "WPHandler", "Response", 
 	"WPSessionApp", "HTTPServer", "app_synchronized", "webmethod", "WPStaticHandler",
-    "Logged", "Logger", "expand"
+    "Logged", "Logger", "yaml_expand"
 ]
 
