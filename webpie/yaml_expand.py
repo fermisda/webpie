@@ -30,9 +30,9 @@ def yaml_expand(item, vars={}):
 
         # use this as the substitution dictionary
         new_vars.update(out)    
-        out.update({k:expand(v, new_vars) for k, v in item.items()})
+        out.update({k:yaml_expand(v, new_vars) for k, v in item.items()})
         item = out
     elif isinstance(item, list):
-        item = [expand(x, vars) for x in item]
+        item = [yaml_expand(x, vars) for x in item]
     return item
             
