@@ -1,6 +1,6 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
-from webpie import Logged, Logger, HTTPServer, RequestProcessor, expand
+from webpie import Logged, Logger, HTTPServer, RequestProcessor, yaml_expand as expand
 from multiprocessing import Process, Pipe
 
 import re, socket

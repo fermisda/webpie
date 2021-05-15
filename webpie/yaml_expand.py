@@ -18,7 +18,7 @@ def expand_str(text, vars):
     return "".join(out)
 
 
-def expand(item, vars={}):
+def yaml_expand(item, vars={}):
     if isinstance(item, str):
         item = expand_str(item, vars)
     elif isinstance(item, dict):

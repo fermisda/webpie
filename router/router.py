@@ -1,4 +1,4 @@
-from webpie import Logged, Logger, expand
+from webpie import Logged, Logger, yaml_expand as expand
 from pythreader import PyThread, synchronized
 import os, yaml, sys, time
 
