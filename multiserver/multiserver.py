@@ -214,7 +214,7 @@ class MultiServerSubprocess(Process, Logged):
     CheckConfigInterval = 5.0
         
     def run(self):
-        init_uid(tag=str(os.getpid))
+        init_uid(tag=str(os.getpid()))
         #print("MultiServerSubprocess.run()...")
         if setproctitle is not None:
             setproctitle("multiserver %s worker" % (self.Port,))
