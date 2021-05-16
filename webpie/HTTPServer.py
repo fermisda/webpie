@@ -329,7 +329,7 @@ class RequestProcessor(Logged):
             if h != "Connection":
                 out.append("%s: %s" % (h, v))
         out.append("Connection: close")     # can not handle keep-alive
-        out.append("X-WebPie-Request-Id:", self.Request.Id)
+        out.append(f"X-WebPie-Request-Id: {self.Request.Id}")
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
 
 class Service(Logged):
