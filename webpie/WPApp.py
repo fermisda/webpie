@@ -208,7 +208,7 @@ class WPHandler:
         #self.RouteMap = []
         self._WebMethods = {}
         if not self._Strict:
-            self.addHandler("wp.debug", self._debug__)
+            self.addHandler(".env", self._env__)
             
     def step_down(self, name):
         allowed = not self._Strict
@@ -364,10 +364,10 @@ class WPHandler:
         
     #
     # This web methods can be used for debugging
-    # call it as "../wp.debug"
+    # call it as "../.env"
     #
 
-    def _debug__(self, req, relpath, **args):
+    def _env__(self, req, relpath, **args):
         lines = (
             ["request.environ:"]
             + ["  %s = %s" % (k, repr(v)) for k, v in sorted(req.environ.items())]
