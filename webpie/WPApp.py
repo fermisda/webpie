@@ -211,13 +211,19 @@ class WPHandler:
             self.addHandler("wp.debug", self._debug__)
             
     def step_down(self, name):
-        if not hasattr(self, name):
-            return None
-        attr = getattr(self, name)
-        if callable(attr):
+        allowed = not self._Strict
+        attr = None
+        if hasattr(self, name):
+            attr = getattr(self, name)
+        elif name in self._WebMethods:
+            attr = self._WebMethods[name]
             allowed = True
-            if self._Strict:
-                allowed = (
+
+        if attr is None:
+            return None
+            
+        if callable(attr):
+            allowed = allowed or (
                         (self._MethodNames is not None 
                                 and name in self._MethodNames)
                     or
