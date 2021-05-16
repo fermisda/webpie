@@ -11,44 +11,6 @@ try:    from setproctitle import setproctitle
 except: pass
 
 
-""" comment out
-subst = re.compile("(%\((\w+)\))")
-
-def expand_str(text, vars):
-    out = []
-    i0 = 0
-    for m in subst.finditer(text):
-        name = m.group(2)
-        i1 = m.end(1)
-        if name in vars:
-            out.append(text[i0:m.start(1)])
-            out.append(str(vars[name]))
-        else:
-            out.append(text[i0:i1])
-        i0 = i1
-    out.append(text[i0:])
-    return "".join(out)
-
-
-def expand(item, vars={}):
-    if isinstance(item, str):
-        item = expand_str(item, vars)
-    elif isinstance(item, dict):
-        new_vars = {}
-        new_vars.update(vars)
-
-        # substitute top level strings only
-        out = {k:expand_str(v, vars) for k, v in item.items() if isinstance(v, str)}
-
-        # use this as the substitution dictionary
-        new_vars.update(out)    
-        out.update({k:expand(v, new_vars) for k, v in item.items()})
-        item = out
-    elif isinstance(item, list):
-        item = [expand(x, vars) for x in item]
-    return item
-"""
-            
 class RequestTask(RequestProcessor, Task):
     
     def __init__(self, wsgi_app, request, logger):
@@ -101,7 +63,10 @@ class Service(Primitive, Logged):
             exec(open(fname, "r").read(), g)
             if "create" in config:
                 args = config.get("args")
-                app = g[config["create"]](args)
+                if args is None:
+                    app = g[config["create"]]()
+                else:
+                    app = g[config["create"]](args)
             else:
                 app = g[config.get("application", "application")]
             self.AppArgs = args
@@ -127,6 +92,7 @@ class Service(Primitive, Logged):
         self.log_error("request failed:", "\n".join(traceback.format_exception(exc_type, exc_value, tb)))
 
     def accept(self, request):
+        #print(f"Service {self}: accept()")
         header = request.HTTPHeader
         uri = header.URI
         self.debug("accept: uri:", uri, " prefix:", self.Prefix)
@@ -137,6 +103,7 @@ class Service(Primitive, Logged):
                 uri = self.ReplacePrefix + uri
             header.replaceURI(uri)
             request.AppName = self.Name
+            #print(f"Service {self}: accept(): self.WSGIApp: {self.WSGIApp}")
             self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
             return True
         else:
@@ -210,6 +177,7 @@ class MultiServerSubprocess(Process, Logged):
         self.MasterPID = os.getpid()
 
     def reconfigure(self):
+        #print("MultiServerSubprocess.reconfigure()...")
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
         
@@ -237,14 +205,16 @@ class MultiServerSubprocess(Process, Logged):
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
             self.log(f"server created with services: {names}")
         else:
-            self.Server.reconfigureApps(service_list)
+            self.Server.setServices(service_list)
             self.log(f"server reconfigured with services: {names}")
         self.Services = service_list
         self.log("reconfigured")
+        #print("MultiServerSubprocess.reconfigure() done")
 
     CheckConfigInterval = 5.0
         
     def run(self):
+        #print("MultiServerSubprocess.run()...")
         if setproctitle is not None:
             setproctitle("multiserver %s worker" % (self.Port,))
         pid = os.getpid()

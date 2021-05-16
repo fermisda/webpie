@@ -197,7 +197,8 @@ class HTTPHeader(object):
 class RequestProcessor(Logged):
     
     def __init__(self, wsgi_app, request, logger):
-        self.App = wsgi_app
+        #print("RequestProcessor: wsgi_app:", wsgi_app)
+        self.WSGIApp = wsgi_app
         self.Request = request
         self.OutBuffer = ""
         self.ResponseStatus = None
@@ -273,7 +274,7 @@ class RequestProcessor(Logged):
             #print("env:")
             #for k, v in env.items():
             #    print(k,":",v)
-            out = self.App(env, self.start_response)    
+            out = self.WSGIApp(env, self.start_response)    
         except:
             self.log_error("error in wsgi_app: %s" % (traceback.format_exc(),))
             self.start_response("500 Error", 
@@ -315,14 +316,9 @@ class RequestProcessor(Logged):
         out.append("Connection: close")     # can not handle keep-alive
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
 
-class DirectApplication(Logged):
+class Service(Logged):
     
     def __init__(self, app, logger=None):
-        
-        #assert isinstance(app, WPApp)
-        
-        import importlib
-        
         Logged.__init__(self, f"[app {app.__class__.__name__}]", logger)
         self.Name = app.__class__.__name__
         self.WPApp = app
@@ -408,13 +404,18 @@ class RequestReader(Task, Logged):
                 else:
                     request.HTTPHeader = header
                     request.Body = body
-                    app = self.Dispatcher.dispatch(self.Request)
-                    dispatched = app is not None
+                    service = self.Dispatcher.dispatch(self.Request)
+                    dispatched = service is not None
         finally:
             if not dispatched:
                 try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
                 except: pass
                 request.close()
+                self.log('%s:%s :%s %s %s -> (nomatch)' % 
+                    (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                        header.Method, header.OriginalURI
+                    )
+                )
             self.SocketWrapper = self.Dispatcher = self.Logger = None
 
 class SSLSocketWrapper(object):
@@ -445,7 +446,7 @@ class SSLSocketWrapper(object):
 
 class HTTPServer(PyThread, Logged):
 
-    def __init__(self, port, apps, sock=None, logger=None, max_connections = 100, 
+    def __init__(self, port, app=None, services=[], sock=None, logger=None, max_connections = 100, 
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = "-", debug=None,
@@ -465,7 +466,11 @@ class HTTPServer(PyThread, Logged):
         queue_capacity = max_queued
         self.RequestReaderQueue = TaskQueue(max_connections, capacity=queue_capacity, delegate=self)
         self.SocketWrapper = SocketWrapper(certfile, keyfile, verify, ca_file, password) if keyfile else None
-        self.reconfigureApps(apps)
+        
+        if app is not None:
+            services = [Service(app, logger)]
+            
+        self.Services = services
         self.Stop = False
         
     def close(self):
@@ -476,7 +481,7 @@ class HTTPServer(PyThread, Logged):
         self.RequestReaderQueue.join()
         
     @staticmethod
-    def from_config(config, apps, logger=None, logging=False, log_file=None, debug=None):
+    def from_config(config, services, logger=None, logging=False, log_file=None, debug=None):
         port = config["port"]
         
         timeout = config.get("timeout", 20.0)
@@ -490,17 +495,16 @@ class HTTPServer(PyThread, Logged):
         ca_file = config.get("ca_file")
         password = config.get("password")
         
-        return HTTPServer(port, apps, logger=logger, max_connections=max_connections,
+        #print("HTTPServer.from_config: services:", services)
+        
+        return HTTPServer(port, services=services, logger=logger, max_connections=max_connections,
                 timeout = timeout, max_queued = queue_capacity, 
                 logging = logging, log_file=log_file, debug=debug,
                 certfile=certfile, keyfile=keyfile, verify=verify, ca_file=ca_file, password=password
         )
         
-    @synchronized
-    def reconfigureApps(self, apps):
-        if not isinstance(apps, list):
-            apps = [apps]
-        self.Apps = [DirectApplication(app, self.Logger) for app in apps]
+    def setServices(self, services):
+        self.Services = services
         
     def connectionCount(self):
         return len(self.Connections)    
@@ -533,7 +537,7 @@ class HTTPServer(PyThread, Logged):
         except: pass
         self.Sock = None
         
-    def connection_accepted(self, csock, caddr):
+    def connection_accepted(self, csock, caddr):        # called externally by multiserver
         request = Request(self.Port, csock, caddr)
         self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
         reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self.Logger)
@@ -547,9 +551,9 @@ class HTTPServer(PyThread, Logged):
 
     @synchronized
     def dispatch(self, request):
-        for app in self.Apps:
-            if app.accept(request):
-                return app
+        for service in self.Services:
+            if service.accept(request):
+                return service
         else:
             return None
 
