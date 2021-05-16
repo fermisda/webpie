@@ -253,7 +253,7 @@ class RequestProcessor(Logged):
             QUERY_STRING = header.query(),
         )
         env["wsgi.url_scheme"] = "http"
-        ebv["WebPie.request_id"] = request.Id
+        env["WebPie.request_id"] = request.Id
 
         if ssl_info != None:
             subject, issuer = self.x509_names(ssl_info)
