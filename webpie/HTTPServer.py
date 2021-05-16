@@ -420,14 +420,8 @@ class RequestReader(Task, Logged):
 
 class SSLSocketWrapper(object):
      
-    def __init__(self, config, certfile, keyfile, verify, ca_file, password):
+    def __init__(self, certfile, keyfile, verify, ca_file, password):
         import ssl
-        
-        keyfile = keyfile or config.get("key")
-        certfile = certfile or config.get("cert")
-        ca_file = ca_file or config.get("ca_cert")
-        verify = verify or config.get("verify", "optional")
-        password = password or config.get("password")
         
         self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
@@ -465,7 +459,7 @@ class HTTPServer(PyThread, Logged):
         max_connections =  max_connections
         queue_capacity = max_queued
         self.RequestReaderQueue = TaskQueue(max_connections, capacity=queue_capacity, delegate=self)
-        self.SocketWrapper = SocketWrapper(certfile, keyfile, verify, ca_file, password) if keyfile else None
+        self.SocketWrapper = SSLSocketWrapper(certfile, keyfile, verify, ca_file, password) if keyfile else None
         
         if app is not None:
             services = [Service(app, logger)]
@@ -491,7 +485,7 @@ class HTTPServer(PyThread, Logged):
         # TLS
         certfile = config.get("cert")
         keyfile = config.get("key")
-        verify = config.get("verify")
+        verify = config.get("verify", "none")
         ca_file = config.get("ca_file")
         password = config.get("password")
         
