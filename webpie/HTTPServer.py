@@ -225,7 +225,7 @@ class RequestProcessor(Logged):
         
     def format_x509_name(self, x509_name):
         components = [(to_str(k), to_str(v)) for k, v in x509_name.get_components()]
-        return "/".join(f"{k}={v}" for k, v in components)
+        return ",".join(f"{k}={v}" for k, v in components)
         
     def x509_names(self, ssl_info):
         import OpenSSL.crypto as crypto
