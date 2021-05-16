@@ -1,6 +1,6 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
-from webpie import Logged, Logger, HTTPServer, RequestProcessor, yaml_expand as expand
+from webpie import Logged, Logger, HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
 
 import re, socket
@@ -214,6 +214,7 @@ class MultiServerSubprocess(Process, Logged):
     CheckConfigInterval = 5.0
         
     def run(self):
+        init_uid(tag=str(os.getpid))
         #print("MultiServerSubprocess.run()...")
         if setproctitle is not None:
             setproctitle("multiserver %s worker" % (self.Port,))
