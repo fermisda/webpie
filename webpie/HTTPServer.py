@@ -223,6 +223,21 @@ class RequestProcessor(Logged):
                         out[k] = v
         return out
         
+    def format_x509_name(self, x509_name):
+        components = [(to_str(k), to_str(v)) for k, v in x509_name.get_components()]
+        return "/".join(f"{k}={v}" for k, v in components)
+        
+    def x509_names(self, ssl_info):
+        import OpenSSL.crypto as crypto
+        subject, issuer = None, None
+        if ssl_info is not None:
+            cert_bin = ssl_info.getpeercert(True)
+            if cert_bin is not None:
+                x509 = crypto.load_certificate(crypto.FILETYPE_ASN1,cert_bin)
+                if x509 is not None:
+                    subject = self.format_x509_name(x509.get_subject())
+                    issuer = self.format_x509_name(x509.get_issuer())
+        return subject, issuer
 
     def run(self):        
         request = self.Request
