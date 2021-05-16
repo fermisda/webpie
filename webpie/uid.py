@@ -23,7 +23,7 @@ class _UIDGen(Primitive):
             a1 = random.choice(self._alphabet)
             a2 = random.choice(self._alphabet)
             a3 = random.choice(self._alphabet)
-            u = "%s%s%s.%03d" % (a1, a2, a3, u%1000)
+            u = "%s%s%s.%03d" % (a1, a2, a3, u%1000000)
             if self.Tag:
                 u = self.Tag + "." + u
         return u
