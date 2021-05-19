@@ -48,7 +48,7 @@ class Service(Primitive, Logged):
         saved_environ = os.environ.copy()
         try:
             args = None
-            fname = config["file"]
+            self.ScriptFileName = fname = config["file"]
             g = {}
 
             extra_path = config.get("python_path")
@@ -103,7 +103,11 @@ class Service(Primitive, Logged):
                 uri = self.ReplacePrefix + uri
             header.replaceURI(uri)
             request.AppName = self.Name
-            #print(f"Service {self}: accept(): self.WSGIApp: {self.WSGIApp}")
+            script_path = self.Prefix
+            while script_path and script_path.endswith("/"):
+                script_path = script_path[:-1]
+            request.Environ["SCRIPT_NAME"] = script_path
+            request.Environ["SCRIPT_FILENAME"] = self.ScriptFileName
             self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
             return True
         else:

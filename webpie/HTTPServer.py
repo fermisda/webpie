@@ -244,14 +244,16 @@ class RequestProcessor(Logged):
         header = request.HTTPHeader
         ssl_info = request.SSLInfo
         csock = request.CSock
-        
+
         env = dict(
             REQUEST_METHOD = header.Method.upper(),
             PATH_INFO = header.path(),
             SCRIPT_NAME = "",
+            SCRIPT_FILENAME = "",
             SERVER_PROTOCOL = header.Protocol,
             QUERY_STRING = header.query(),
         )
+        env.update(request.Environ)
         env["wsgi.url_scheme"] = "http"
         env["WebPie.request_id"] = request.Id
 
@@ -357,6 +359,7 @@ class Request(object):
         self.Body = b''
         self.SSLInfo = None     
         self.AppName = None
+        self.Environ = {}
         
     def close(self):
         if self.CSock is not None:

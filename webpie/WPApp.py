@@ -659,9 +659,9 @@ class WPApp(object):
 
         req = Request(environ)
         if not self.Initialized:
-            self.ScriptName = environ.get('SCRIPT_NAME','')
-            self.Script = environ.get('SCRIPT_FILENAME', 
-                        os.environ.get('UWSGI_SCRIPT_FILENAME'))
+            self.ScriptName = environ.get('SCRIPT_NAME') or ''
+            self.Script = environ.get('SCRIPT_FILENAME') or \
+                        os.environ.get('UWSGI_SCRIPT_FILENAME')
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.init()
             self.Initialized = True
