@@ -307,7 +307,9 @@ class MPMultiServer(PyThread, Logged):
         self.Sock = None
         self.Stop = False
         self.MPLogger = None
-        self.MPLogger = MPLogger(logger) if logger is not None else None
+        if logger is not None:
+            self.MPLogger = MPLogger(logger)
+            self.MPLogger.start()
         self.reconfigure()
 
     @synchronized
@@ -413,7 +415,6 @@ def main():
         debug = cfg.get("debug", False)
         if cfg.get("enabled", True):
             logger = Logger(cfg.get("file", "-"), debug=debug)
-            logger.start()
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
     ms = MPMultiServer(config_file, logger)
