@@ -22,6 +22,7 @@ class Service(Primitive, Logged):
     
     def __init__(self, config, logger=None):
         name = config["name"]
+        #print("Service(): config:", config)
         self.ServiceName = name
         Primitive.__init__(self, name=f"[app {name}]")        
         Logged.__init__(self, f"[app {name}]", logger, debug=True)
@@ -48,7 +49,9 @@ class Service(Primitive, Logged):
         saved_environ = os.environ.copy()
         try:
             args = None
-            self.ScriptFileName = fname = config["file"]
+            if "file" in config:
+                print('*** Use of "file" parameter is deprecated. Use "module" instead')
+            self.ScriptFileName = fname = config.get("module", config.get("file"))
             g = {}
 
             extra_path = config.get("python_path")
@@ -61,14 +64,27 @@ class Service(Primitive, Logged):
                 os.environ.update(config["env"])
                 
             exec(open(fname, "r").read(), g)
+            
             if "create" in config:
-                args = config.get("args")
-                if args is None:
-                    app = g[config["create"]]()
-                else:
-                    app = g[config["create"]](args)
+                # deprecated
+                print('*** Use of "create" parameter is deprecated. Use "application: function()" instead')
+                application = config["create"] + "()"
             else:
-                app = g[config.get("application", "application")]
+                application = config.get("application", "application")
+            if application.endswith("()"):
+                args = config.get("args")
+                fcn = g[application[:-2]]
+                if isinstance(args, dict):
+                    app = fcn(**args)
+                elif isinstance(args, (list, tuple)):
+                    app = fcn(*args)
+                elif args is None:
+                    app = fcn()
+                else:
+                    app = fcn(args)
+            else:
+                app = g[application]
+            
             self.AppArgs = args
             self.WSGIApp = app
 
@@ -102,7 +118,7 @@ class Service(Primitive, Logged):
             if self.ReplacePrefix:
                 uri = self.ReplacePrefix + uri
             header.replaceURI(uri)
-            request.AppName = self.Name
+            request.AppName = self.ServiceName
             script_path = self.Prefix
             while script_path and script_path.endswith("/"):
                 script_path = script_path[:-1]
@@ -189,6 +205,7 @@ class MultiServerSubprocess(Process, Logged):
         services = config.get("services", [])
         
         service_list = []
+        assert isinstance(services, list)
         for svc_cfg in services:
             if "template" in svc_cfg:
                 template = templates.get(svc_cfg.get("template", "*"))
@@ -203,6 +220,8 @@ class MultiServerSubprocess(Process, Logged):
                     c["name"] = name
                     service_list.append(Service(expand(c), self.Logger))
             else:
+                #print("MultiServerSubprocess.reconfigure: svc_cfg:", svc_cfg)
+                #print("MultiServerSubprocess.reconfigure: expanded:", expand(svc_cfg))
                 service_list.append(Service(expand(svc_cfg), self.Logger))
         names = ",".join(s.Name for s in service_list)
         if self.Server is None:
@@ -287,8 +306,8 @@ class MPMultiServer(PyThread, Logged):
         self.Subprocesses = []
         self.Sock = None
         self.Stop = False
+        self.MPLogger = None
         self.MPLogger = MPLogger(logger) if logger is not None else None
-        self.MPLogger.start()
         self.reconfigure()
 
     @synchronized
@@ -307,7 +326,7 @@ class MPMultiServer(PyThread, Logged):
             print("Can not change port number")
             sys.exit(1)
         
-        new_nprocesses = self.Config["processes"]
+        new_nprocesses = self.Config.get("processes", 1)
         if new_nprocesses > len(self.Subprocesses):
             for p in self.Subprocesses:
                 p.request_reconfigure()
@@ -394,6 +413,7 @@ def main():
         debug = cfg.get("debug", False)
         if cfg.get("enabled", True):
             logger = Logger(cfg.get("file", "-"), debug=debug)
+            logger.start()
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
     ms = MPMultiServer(config_file, logger)

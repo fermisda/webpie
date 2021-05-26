@@ -19,6 +19,7 @@ def expand_str(text, vars):
 
 
 def yaml_expand(item, vars={}):
+    #print("yaml_expand: input:", item, "    vars:", vars)
     if isinstance(item, str):
         item = expand_str(item, vars)
     elif isinstance(item, dict):
@@ -34,5 +35,6 @@ def yaml_expand(item, vars={}):
         item = out
     elif isinstance(item, list):
         item = [yaml_expand(x, vars) for x in item]
+    #print("yaml_expand: output:", item)
     return item
             
