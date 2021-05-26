@@ -105,7 +105,11 @@ class Service(Primitive, Logged):
             os.environ.update(saved_environ)
             
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
-        self.log_error("request failed:", "\n".join(traceback.format_exception(exc_type, exc_value, tb)))
+        self.log_error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
+        try:
+            task.Request.close()
+        except:
+            pass
 
     def accept(self, request):
         #print(f"Service {self}: accept()")
