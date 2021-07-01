@@ -194,9 +194,10 @@ class HTTPHeader(object):
     def as_bytes(self, original=False):
         return to_bytes(self.as_text(original))
         
-class RequestProcessor(Logged):
+class RequestProcessor(Task, Logged):
     
     def __init__(self, wsgi_app, request, logger):
+        Task.__init__(self, name=f"[RequestProcessor {request.Id}]")
         #print("RequestProcessor: wsgi_app:", wsgi_app)
         self.WSGIApp = wsgi_app
         self.Request = request
@@ -341,11 +342,12 @@ class Service(Logged):
         Logged.__init__(self, f"[app {app.__class__.__name__}]", logger)
         self.Name = app.__class__.__name__
         self.WPApp = app
+        self.ProcessorQueue = TaskQueue(5)
         
     def accept(self, request):
         p = RequestProcessor(self.WPApp, request, self.Logger)
         request.AppName = self.Name
-        p.run()
+        self.ProcessorQueue << p
         return True
 
 class Request(object):

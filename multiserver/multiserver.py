@@ -11,12 +11,14 @@ try:    from setproctitle import setproctitle
 except: pass
 
 
-class RequestTask(RequestProcessor, Task):
-    
-    def __init__(self, wsgi_app, request, logger):
-        #print("RequestTask.__init__: args:", wsgi_app, request, logger)
-        Task.__init__(self, name=f"[RequestTask {request.Id}]")
-        RequestProcessor.__init__(self, wsgi_app, request, logger)
+RequestTask = RequestProcessor
+
+#class RequestTask(RequestProcessor, Task):
+#    
+#    def __init__(self, wsgi_app, request, logger):
+#        #print("RequestTask.__init__: args:", wsgi_app, request, logger)
+#        Task.__init__(self, name=f"[RequestTask {request.Id}]")
+#        RequestProcessor.__init__(self, wsgi_app, request, logger)
 
 class Service(Primitive, Logged):
     
