@@ -198,6 +198,8 @@ class WPHandler:
     _Strict = False
     _MethodNames = None
     
+    DefaultMethod = "index"
+    
     def __init__(self, request, app):
         self.Request = request
         self.Path = None
@@ -211,6 +213,7 @@ class WPHandler:
             self.addHandler(".env", self._env__)
             
     def step_down(self, name):
+        if not name:    return self
         allowed = not self._Strict
         attr = None
         if hasattr(self, name):
@@ -444,7 +447,7 @@ class WPApp(object):
 
     def __init__(self, root_class_or_handler, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix="", default_method="index",
+            prefix=None, replace_prefix="",
             environ={}):
 
 
@@ -462,7 +465,6 @@ class WPApp(object):
         self.ReplacePrefix = replace_prefix
         self.HandlerParams = []
         self.HandlerArgs = {}
-        self.DefaultMethod = default_method
         self.Environ = {}
         self.Environ.update(environ)
         
@@ -571,8 +573,10 @@ class WPApp(object):
             if callable(handler):
                 method = handler
             elif not path_down:
-                if not path.endswith("/"):  path = path + "/"
-                raise HTTPFound(location=path + self.DefaultMethod)
+                last_word = path.split("/")[-1]
+                if last_word: last_word = last_word + "/"
+                redirect = last_word + handler.DefaultMethod
+                raise HTTPFound(location=redirect)
         elif callable(handler):
             method = handler
             
@@ -601,9 +605,11 @@ class WPApp(object):
     def wsgi_call(self, root_handler, environ, start_response):
         # path_to = '/'
         path = environ.get('PATH_INFO', '')
+        #while "//" in path:
+        #    path.replace("//", "/")
         path_down = path.split("/")
-        while '' in path_down:
-            path_down.remove('')
+        #while '' in path_down:
+        #    path_down.remove('')
         args = self.parseQuery(environ.get("QUERY_STRING", ""))
         request = Request(environ)
         try:
