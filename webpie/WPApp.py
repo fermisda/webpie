@@ -573,9 +573,8 @@ class WPApp(object):
             if callable(handler):
                 method = handler
             elif not path_down:
-                last_word = path.split("/")[-1]
-                if last_word: last_word = last_word + "/"
-                redirect = last_word + handler.DefaultMethod
+                prefix = (path.split("/")[-1] or ".") + "/"
+                redirect = prefix + handler.DefaultMethod
                 raise HTTPFound(location=redirect)
         elif callable(handler):
             method = handler
