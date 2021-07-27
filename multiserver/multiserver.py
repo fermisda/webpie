@@ -1,4 +1,4 @@
-import traceback, sys, time, signal, importlib, yaml, os, os.path
+import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
 from webpie import Logged, Logger, HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
@@ -26,13 +26,13 @@ class Service(Primitive, Logged):
         name = config["name"]
         #print("Service(): config:", config)
         self.ServiceName = name
-        Primitive.__init__(self, name=f"[app {name}]")        
+        Primitive.__init__(self, name=f"[service {name}]")        
         Logged.__init__(self, f"[app {name}]", logger, debug=True)
         self.Config = None
-        self.configure(config)
+        self.Initialized = self.initialize(config)
 
     @synchronized
-    def configure(self, config=None):
+    def initialize(self, config=None):
         config = config or self.Config
         self.Config = config
 
@@ -65,8 +65,12 @@ class Service(Primitive, Logged):
             if "env" in config:
                 os.environ.update(config["env"])
                 
-            exec(open(fname, "r").read(), g)
-            
+            try:    exec(open(fname, "r").read(), g)
+            except:
+                tb = traceback.format_exc()
+                self.log_error(f"Error importing module {fname}:\n{tb}")
+                return False
+                
             if "create" in config:
                 # deprecated
                 print('*** Use of "create" parameter is deprecated. Use "application: function()" instead')
@@ -75,17 +79,36 @@ class Service(Primitive, Logged):
                 application = config.get("application", "application")
             if application.endswith("()"):
                 args = config.get("args")
-                fcn = g[application[:-2]]
-                if isinstance(args, dict):
-                    app = fcn(**args)
-                elif isinstance(args, (list, tuple)):
-                    app = fcn(*args)
-                elif args is None:
-                    app = fcn()
-                else:
-                    app = fcn(args)
+                fcn_name = application[:-2]
+                fcn = g.get(fcn_name)
+                if fcn is None:
+                    self.log_error(f"Application creation function {fcn_name} not found in module {fname}")
+                    return False
+                
+                try:    
+                    if isinstance(args, dict):
+                        app = fcn(**args)
+                    elif isinstance(args, (list, tuple)):
+                        app = fcn(*args)
+                    elif args is None:
+                        app = fcn()
+                    else:
+                        app = fcn(args)
+                except:
+                    tb = traceback.format_exc()
+                    self.log_error(f"Error calling the application initialization function:\n{tb}")
+                    return False
+                    
+                if app is None:
+                    self.log_error(f'Application creation function {fcn_name} returned None')
+                    return False
+
             else:
-                app = g[application]
+                app = g.get(application)
+                if app is None:
+                    self.log_error(f'Application object "{application}" not found in {fname}')
+                    return False
+                    
             
             self.AppArgs = args
             self.WSGIApp = app
@@ -94,7 +117,13 @@ class Service(Primitive, Logged):
             queue_capacity = config.get("queue_capacity", 10)
             self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity,
                 delegate=self)
-            self.log("(re)configured")
+            self.log("initiaized")
+            
+        except:
+            tb = traceback.format_exc()
+            self.log_error(f"Error initializing application:\n{tb}")
+            return False
+            
 
         finally:
             sys.path = saved_path
@@ -106,6 +135,8 @@ class Service(Primitive, Logged):
                 del os.environ[n]
             os.environ.update(saved_environ)
             
+        return True
+            
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
         self.log_error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
         try:
@@ -115,6 +146,8 @@ class Service(Primitive, Logged):
 
     def accept(self, request):
         #print(f"Service {self}: accept()")
+        if not self.Initialized:
+            return False
         header = request.HTTPHeader
         uri = header.URI
         self.debug("accept: uri:", uri, " prefix:", self.Prefix)
@@ -154,7 +187,7 @@ class Service(Primitive, Logged):
                 break
         else:
             return False
-        self.configure()
+        self.Initialized = self.initialize()
 
 class MPLogger(PyThread):
     
@@ -172,26 +205,29 @@ class MPLogger(PyThread):
         from queue import Empty
         while True:
             msg = self.Queue.get()
-            self.Logger.write(msg+"\n")
+            who, t = msg[:2]
+            parts = msg[2:]
+            t = datetime.datetime.fromtimestamp(t)
+            process_timestamp = t.strftime("%m/%d/%Y %H:%M:%S") + ".%03d" % (t.microsecond//1000)
+            self.Logger.log(who, "%s: %s" % (process_timestamp, " ".join(parts)))
     
     def log(self, who, *parts):
         #
         # subprocess side
         #
         if self.Logger is not None:
-            msg = "%s: %s: %s" % (time.ctime(), who, " ".join([str(p) for p in parts]))
-            self.Queue.put(msg)
-        
+            self.Queue.put((who, time.time())+parts)
+            
     debug = log
 
 
-class MultiServerSubprocess(Process, Logged):
+class MultiServerSubprocess(Process):
     
     def __init__(self, port, sock, config_file, logger=None):
         Process.__init__(self, daemon=True)
         #print("MultiServerSubprocess.__init__: logger:", logger)
-        Logged.__init__(self, "MultiServerSubprocess", logger)
         self.Sock = sock
+        self.Logger = logger
         self.Port = port
         self.Server = None
         self.ConnectionToMaster, self.ConnectionToSubprocess = Pipe()
@@ -201,6 +237,10 @@ class MultiServerSubprocess(Process, Logged):
         self.MasterSide = True
         self.Stop = False
         self.MasterPID = os.getpid()
+        
+    def log(self, *parts):
+        mypid=os.getpid()
+        self.Logger.log(f"[Subprocess {mypid}]", *parts)
 
     def reconfigure(self):
         #print("MultiServerSubprocess.reconfigure()...")
@@ -213,6 +253,7 @@ class MultiServerSubprocess(Process, Logged):
         service_list = []
         assert isinstance(services, list)
         for svc_cfg in services:
+            svc = None
             if "template" in svc_cfg:
                 template = templates.get(svc_cfg.get("template", "*"))
                 if template is not None:
@@ -224,11 +265,15 @@ class MultiServerSubprocess(Process, Logged):
                 for name in names:
                     c = svc_cfg.copy()
                     c["name"] = name
-                    service_list.append(Service(expand(c), self.Logger))
+                    svc = Service(expand(c), self.Logger)
             else:
                 #print("MultiServerSubprocess.reconfigure: svc_cfg:", svc_cfg)
                 #print("MultiServerSubprocess.reconfigure: expanded:", expand(svc_cfg))
-                service_list.append(Service(expand(svc_cfg), self.Logger))
+                svc = Service(expand(svc_cfg), self.Logger)
+            if not svc.Initialized:
+                self.log_error(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
+            else:
+                service_list.append(svc)
         names = ",".join(s.Name for s in service_list)
         if self.Server is None:
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
@@ -371,6 +416,7 @@ class MPMultiServer(PyThread, Logged):
         alive = []
         for p in self.Subprocesses:
             if not p.is_alive():
+                print("subprocess died with status", p.exitcode, file=sys.stderr)
                 self.log("subprocess died with status", p.exitcode)
                 n_died += 1
             else:
@@ -383,6 +429,7 @@ class MPMultiServer(PyThread, Logged):
                 p = MultiServerSubprocess(self.Port, self.Sock, self.ConfigFile, logger=self.MPLogger)
                 p.start()
                 self.Subprocesses.append(p)
+                print("subprocess died with status", p.exitcode, file=sys.stderr)
                 self.log("started new subprocess")
                 
     @synchronized

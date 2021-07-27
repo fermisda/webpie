@@ -19,12 +19,16 @@ class Logger(Primitive):
         self.Debug = debug
         
     def log(self, who, *parts):
-        #print("who:", who)
-        #print("parts:", parts)
+        #print("Logger.log: who:", who, "    parts:", parts)
         if self.LogFile is not None:
-            self.LogFile.log("%s: %s: %s" % (time.ctime(), who, " ".join([str(p) for p in parts])))
+            #self.LogFile.log("%s: %s: %s" % (time.ctime(), who, " ".join([str(p) for p in parts])))
+            
+            #print("Logger.log:", parts)
+            
+            self.LogFile.log("%s: %s" % (who, " ".join([str(p) for p in parts])))
             
     def write(self, msg):
+        #print("Logger.write:", msg)
         self.LogFile.write(msg)
         
     debug = log
