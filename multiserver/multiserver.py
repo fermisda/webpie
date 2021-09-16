@@ -274,14 +274,14 @@ class MultiServerSubprocess(Process):
                         service_list.append(svc)
                         #print("Service", svc, "created and added to the list")
                     else:
-                        self.log_error(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
+                        self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
             else:
                 #print("MultiServerSubprocess.reconfigure: svc_cfg:", svc_cfg)
                 #print("MultiServerSubprocess.reconfigure: expanded:", expand(svc_cfg))
                 svc = Service(expand(svc_cfg), self.Logger)
                 if not svc.Initialized:
                     #print("service not initialzed")
-                    self.log_error(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
+                    self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
                 else:
                     service_list.append(svc)
                     #print("Service", svc, "created and added to the list")
