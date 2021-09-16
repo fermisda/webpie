@@ -151,6 +151,7 @@ class Service(Primitive, Logged):
         header = request.HTTPHeader
         uri = header.URI
         self.debug("accept: uri:", uri, " prefix:", self.Prefix)
+        #print("Sevice", self,"   accept: uri:", uri, " prefix:", self.Prefix)
         if uri.startswith(self.Prefix):
             uri = uri[len(self.Prefix):]
             if not uri.startswith("/"):     uri = "/" + uri
@@ -164,8 +165,10 @@ class Service(Primitive, Logged):
             request.Environ["SCRIPT_NAME"] = script_path
             request.Environ["SCRIPT_FILENAME"] = self.ScriptFileName
             self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
+            #print("Service", self, "   accepted")
             return True
         else:
+            #print("Service", self, "   rejected")
             return False
     
     def close(self):
@@ -253,6 +256,7 @@ class MultiServerSubprocess(Process):
         service_list = []
         assert isinstance(services, list)
         for svc_cfg in services:
+            #print("svc_cfg:", svc_cfg)
             svc = None
             if "template" in svc_cfg:
                 template = templates.get(svc_cfg.get("template", "*"))
@@ -266,14 +270,22 @@ class MultiServerSubprocess(Process):
                     c = svc_cfg.copy()
                     c["name"] = name
                     svc = Service(expand(c), self.Logger)
+                    if svc.Initialized:
+                        service_list.append(svc)
+                        #print("Service", svc, "created and added to the list")
+                    else:
+                        self.log_error(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
             else:
                 #print("MultiServerSubprocess.reconfigure: svc_cfg:", svc_cfg)
                 #print("MultiServerSubprocess.reconfigure: expanded:", expand(svc_cfg))
                 svc = Service(expand(svc_cfg), self.Logger)
-            if not svc.Initialized:
-                self.log_error(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
-            else:
-                service_list.append(svc)
+                if not svc.Initialized:
+                    #print("service not initialzed")
+                    self.log_error(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
+                else:
+                    service_list.append(svc)
+                    #print("Service", svc, "created and added to the list")
+            #print("--------")
         names = ",".join(s.Name for s in service_list)
         if self.Server is None:
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
@@ -311,6 +323,7 @@ class MultiServerSubprocess(Process):
             except socket.timeout:
                 pass
             else:
+                print("run(): services:", [str(s) for s in self.Services])
                 self.Server.connection_accepted(csock, caddr)
             
             if self.ConnectionToMaster.poll(0):

@@ -40,8 +40,6 @@ _MIME_TYPES_BASE = {
         "css":  "text/css"
     }
 
-
-
 #
 # Decorators
 #
@@ -181,6 +179,8 @@ def makeResponse(resp):
         else:
             raise ValueError("Can not convert to a Response: " + repr(resp))
             
+    #print("resp:", resp, " -->", "  app_iter:", app_iter,"  content_type:", content_type)
+            
     response = Response(app_iter=app_iter, status=status)
     if headers is not None: 
         #print("setting headers:", headers)
@@ -188,7 +188,7 @@ def makeResponse(resp):
     if content_type:
         response.content_type = content_type    # make sure to apply this after headers
     if text is not None:  response.text = text
-    
+    #print(response)
     return response
 
 class WPHandler:
