@@ -323,7 +323,7 @@ class MultiServerSubprocess(Process):
             except socket.timeout:
                 pass
             else:
-                print("run(): services:", [str(s) for s in self.Services])
+                #print("run(): services:", [str(s) for s in self.Services])
                 self.Server.connection_accepted(csock, caddr)
             
             if self.ConnectionToMaster.poll(0):
