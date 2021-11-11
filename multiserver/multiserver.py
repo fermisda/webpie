@@ -377,7 +377,7 @@ class MPMultiServer(PyThread, Logged):
         self.Stop = False
         self.MPLogger = None
         if logger is not None:
-            self.MPLogger = MPLogger(logger, debug)
+            self.MPLogger = MPLogger(logger, debug=debug)
             self.MPLogger.start()
         self.Debug = debug
         self.reconfigure()
