@@ -411,7 +411,7 @@ class RequestReader(Task, Logged):
                 except Exception as e:
                     self.debug("Error wrapping socket: %s" % (e,))
                     error = True
-            self.debug("wrapped:", csock)
+            #self.debug("wrapped:", csock)
             if not error:
                 header = HTTPHeader()
                 request_received, body = header.recv(csock)

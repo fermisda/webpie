@@ -209,7 +209,7 @@ class MPLogger(PyThread):
         while True:
             msg = self.Queue.get()
             who, t = msg[:2]
-            parts = msg[2:]
+            parts = [str(p) for p in msg[2:]]
             t = datetime.datetime.fromtimestamp(t)
             process_timestamp = t.strftime("%m/%d/%Y %H:%M:%S") + ".%03d" % (t.microsecond//1000)
             self.Logger.log(who, "%s: %s" % (process_timestamp, " ".join(parts)))
@@ -218,6 +218,7 @@ class MPLogger(PyThread):
         #
         # subprocess side
         #
+        parts = tuple(str(p) for p in parts)
         if self.Logger is not None:
             self.Queue.put((who, time.time())+parts)
             
