@@ -222,8 +222,12 @@ class MPLogger(PyThread):
         if self.Logger is not None:
             self.Queue.put((who, time.time())+parts)
             
-    debug = log
-
+    def debug(self, who, *parts):
+        #
+        # subprocess side
+        #
+        if self.Debug:
+            self.log(f"{who} [DEBUG]", *parts)
 
 class MultiServerSubprocess(Process):
     
@@ -361,9 +365,9 @@ class MultiServerSubprocess(Process):
             
 class MPMultiServer(PyThread, Logged):
             
-    def __init__(self, config_file, logger=None):
+    def __init__(self, config_file, logger=None, debug=False):
         PyThread.__init__(self)
-        Logged.__init__(self, "[Multiserver]", logger, debug=True)
+        Logged.__init__(self, "[Multiserver]", logger, debug=debug)
         self.ConfigFile = config_file
         self.Server = None
         self.Port = None
@@ -373,8 +377,9 @@ class MPMultiServer(PyThread, Logged):
         self.Stop = False
         self.MPLogger = None
         if logger is not None:
-            self.MPLogger = MPLogger(logger)
+            self.MPLogger = MPLogger(logger, debug)
             self.MPLogger.start()
+        self.Debug = debug
         self.reconfigure()
 
     @synchronized
@@ -484,7 +489,7 @@ def main():
             logger = Logger(cfg.get("file", "-"), debug=debug)
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
-    ms = MPMultiServer(config_file, logger)
+    ms = MPMultiServer(config_file, logger, debug)
     signal.signal(signal.SIGHUP, ms.reconfigure)
     #signal.signal(signal.SIGCHLD, ms.child_died)
     signal.signal(signal.SIGINT, ms.killme)
