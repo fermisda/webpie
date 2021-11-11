@@ -433,14 +433,14 @@ class RequestReader(Task, Logged):
                 try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
                 except: pass
                 request.close()
-                if header is not None:
+                if header is not None and header.Complete:
                     self.log('%s:%s :%s %s %s -> (nomatch)' % 
                         (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
                             header.Method, header.OriginalURI
                         )
                     )
                 else:
-                    self.log('%s:%s :%s (request reading error)' % 
+                    self.debug('%s:%s :%s (request reading error)' % 
                         (   request.CAddr[0], request.CAddr[1], request.ServerPort)
                     )
                     

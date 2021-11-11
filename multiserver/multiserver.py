@@ -323,7 +323,7 @@ class MultiServerSubprocess(Process):
             except socket.timeout:
                 pass
             else:
-                print("run(): services:", [str(s) for s in self.Services])
+                #print("run(): services:", [str(s) for s in self.Services])
                 self.Server.connection_accepted(csock, caddr)
             
             if self.ConnectionToMaster.poll(0):
@@ -400,18 +400,18 @@ class MPMultiServer(PyThread, Logged):
                 p = MultiServerSubprocess(self.Port, self.Sock, self.ConfigFile, logger=self.MPLogger)
                 p.start()
                 self.Subprocesses.append(p)
-                self.log("started new subprocess")
+                #self.log("started new subprocess")
         elif new_nprocesses < len(self.Subprocesses):
             while new_nprocesses < len(self.Subprocesses):
                 p = self.Subprocesses.pop()
                 p.stop()
-                self.log("stopped a subprocess")
+                #self.log("stopped a subprocess")
             for p in self.Subprocesses:
                 p.request_reconfigure()
         else:
             for p in self.Subprocesses:
                 p.request_reconfigure()
-        self.log("subprocesses running now:", len(self.Subprocesses))
+        #self.log("subprocesses running now:", len(self.Subprocesses))
         
     def run(self):
         if setproctitle is not None:
