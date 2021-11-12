@@ -2,7 +2,7 @@ FILES = \
 	__init__.py \
 	HTTPServer.py		Version.py		uid.py \
 	WPApp.py WPSessionApp.py \
-	py3.py logs.py LogFile.py
+	py3.py logs.py yaml_expand.py
 	
 LIB_DIR = $(BUILD_DIR)/webpie
 

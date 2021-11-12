@@ -23,7 +23,7 @@ setup(
     license = "BSD 3-clause",
     keywords = "web service, wsgi, web application",
     url = "https://webpie.github.io/",
-    packages=['webpie', 'samples', 'webpie/webob'],
+    packages=['webpie', 'samples', 'webpie/webob', 'router', 'multiserver'],
     long_description=read('README.rst'),
     install_requires=["pythreader"],
     zip_safe = False,
@@ -43,7 +43,8 @@ setup(
     ],
     entry_points = {
             "console_scripts": [
-                "multiserver = bin.multiserver_ui:main",
+                "webpie_multiserver = multiserver.multiserver:main",
+                "webpie_router = router.router:main",
             ]
         }
     

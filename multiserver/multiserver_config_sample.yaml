@@ -1,0 +1,127 @@
+logger:
+    file: logs/multiserver.log
+pid_file:        multiserver.pid
+
+port: 9094
+processes: 3
+
+templates:
+    qe:
+                python_path:
+                    - ./qengine
+                file: qengine/SQEngineApp.py
+                create: create_application
+                max_connections: 5
+                queue_capacity: 5
+                args: cfg/%(service_name).yaml
+                touch_reload:
+                    - cfg/%(service_name).yaml
+                    - qengine/SQEngineApp.py
+    mnvcon:
+                prefix: /%(service_name)/app/
+                python_path:
+                    - ./mnvcon_webserver
+                file: mnvcon_webserver/Server.py
+                create: create_application
+                args: cfg/%(service_name).cfg
+                max_connections: 10
+                queue_capacity: 5
+                touch_reload:
+                    - cfg/%(service_name).cfg
+                    - mnvcon_webserver/Server.py
+    condb:
+                prefix: /%(service_name)/app/
+                python_path:
+                    - ./condb
+                file: condb/ConDBServerApp.py
+                create: create_application
+                args: cfg/%(service_name).cfg
+                max_connections: 10
+                queue_capacity: 5
+                env:
+                    JINJA_TEMPLATES_LOCATION: ./condb
+                touch_reload:
+                    - condb/ConDBServerApp.py
+                    - cfg/%(service_name).cfg
+    ucondb:
+                product: ./ucondb
+                prefix: /%(service_name)/app/
+                python_path:
+                    - "%(product)"
+                file: "%(product)/ServerApp.py"
+                create: create_application
+                args: cfg/%(service_name).cfg
+                max_connections: 10
+                queue_capacity: 5
+                env:
+                    JINJA_TEMPLATES_LOCATION: "%(product)"
+                    UCONDB_CFG: cfg/%(service_name).cfg
+                touch_reload:
+                    - cfg/%(service_name).cfg
+                    - "%(product)/ServerApp.py"
+
+services:
+    # no template
+    -
+        name: basic
+        prefix: /server/
+        python_path:
+            - /path/to/product
+        file:   /path/to/product/script.py
+        create: create_app
+        args: /path/to/config/cfg.cfg
+        max_connections: 10
+        queue_capacity: 5
+        env:
+            JINJA_TEMPLATES_LOCATION: /path/to/templates
+        touch_reload:
+            - /path/to/config/cfg.cfg
+    -   
+        name: no_template
+        product: ./ucondb
+        prefix: /%(service_name)/app/
+        python_path:
+            - "%(product)"
+        file: "%(product)/ServerApp.py"
+        create: create_application
+        args: cfg/%(service_name).cfg
+        max_connections: 10
+        queue_capacity: 5
+        env:
+            JINJA_TEMPLATES_LOCATION: "%(product)"
+            UCONDB_CFG: cfg/%(service_name).cfg
+        touch_reload:
+            - cfg/%(service_name).cfg
+            - "%(product)/ServerApp.py"
+    
+    # UConDB
+    - 
+        template: ucondb
+        names:
+                - icarus_off_ucon_prod
+                - icarus_on_ucon_prod
+                - sbnd_off_ucon_prod
+                - sbnd_on_ucon_prod
+                - sbnd_ucon_dev
+                - protodune_ucon_prod
+    # ConDB
+    -
+        template: condb
+        names:
+            - lariat_con_prod
+            - lariat_con_dev
+            - dune_con_prod
+
+    # Query engine
+    - 
+        name: uboone_qe
+        template: qe
+        prefix: /QE/uboone/
+    - 
+        name: dune_qe
+        template: qe
+        prefix: /QE/dune/
+    - 
+        name: hw_qe
+        template: qe
+        prefix: /QE/hw/app/SQ/

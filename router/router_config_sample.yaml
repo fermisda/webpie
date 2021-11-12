@@ -1,0 +1,20 @@
+templates:
+    echo:   
+        prefix: /echo/%(name)
+        file: apps/echo.py
+        touch_reload: echo_%(name)_reload
+apps:
+    
+    -   template: echo
+        names: 
+            - a
+            - b
+            - c
+
+    -   name: echo
+        prefix: /echo
+        file: apps/echo.py
+        
+    -   name: env
+        prefix: /env
+        file: apps/env.py

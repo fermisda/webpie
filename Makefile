@@ -17,7 +17,8 @@ all_with_version_defined:	tarball
 build: $(BUILD_DIR)
 	cd webpie; make BUILD_DIR=$(BUILD_DIR) build
 	cd samples; make BUILD_DIR=$(BUILD_DIR) build
-	cd bin; make BUILD_DIR=$(BUILD_DIR) build
+	cd multiserver; make BUILD_DIR=$(BUILD_DIR) build
+	cd router; make BUILD_DIR=$(BUILD_DIR) build
 	cp LICENSE $(BUILD_DIR)
     
 tarball: clean build $(TAR_DIR)

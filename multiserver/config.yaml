@@ -1,0 +1,27 @@
+logger:
+    file: logs/multiserver.log
+pid_file:        multiserver.pid
+
+port: 9094
+processes: 3
+
+
+templates:
+    hello:
+                file: apps/hello.py
+                create: create_application
+                args: "%(name)"
+                prefix: /%(name)
+services:
+    -
+      template:  hello
+      names:
+            - a
+            - b
+            - xyz
+    -
+     name: hello
+     prefix: /hello/
+     file: apps/hello.py
+     args: "%(name)"
+     create: create_application

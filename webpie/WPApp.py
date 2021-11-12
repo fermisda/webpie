@@ -2,7 +2,7 @@ from .webob import Response
 from .webob import Request as webob_request
 from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound
     
-import os.path, os, stat, sys, traceback, fnmatch, datetime
+import os.path, os, stat, sys, traceback, fnmatch, datetime, inspect, json
 from threading import RLock
 
 PY2 = sys.version_info[0] == 2
@@ -39,8 +39,6 @@ _MIME_TYPES_BASE = {
         "json":   "text/json",
         "css":  "text/css"
     }
-
-
 
 #
 # Decorators
@@ -118,7 +116,6 @@ class HTTPResponseException(Exception):
     def __init__(self, response):
         self.value = response
 
-
 def makeResponse(resp):
     #
     # acceptable responses:
@@ -126,79 +123,73 @@ def makeResponse(resp):
     # Response
     # text              -- ala Flask
     # status    
+    # dictionary -> JSON representation, content_type = "text/json"
     # (text, status)            
     # (text, "content_type")            
     # (text, {headers})            
     # (text, status, "content_type")
     # (text, status, {headers})
+    # ...
     #
     
+
     if isinstance(resp, Response):
         return resp
+    elif isinstance(resp, int):
+        return Response(status=resp)
     
-    body_or_iter = None
+    app_iter = None
+    text = None
     content_type = None
     status = None
-    extra = None
-    if isinstance(resp, tuple) and len(resp) == 2:
-        body_or_iter, extra = resp
-    elif isinstance(resp, tuple) and len(resp) == 3:
-        body_or_iter, status, extra = resp
-    elif PY2 and isinstance(resp, (str, bytes, unicode)):
-        body_or_iter = resp
-    elif PY3 and isinstance(resp, bytes):
-        body_or_iter = resp
-    elif PY3 and isinstance(resp, str):
-        body_or_iter = to_bytes(resp)
-    elif isinstance(resp, int):
-        status = resp
-    elif isinstance(resp, Iterable):
-        body_or_iter = resp
-    else:
-        raise ValueError("Handler method returned uninterpretable value: " + repr(resp))
+    headers = None
+    
+    if not isinstance(resp, tuple):
+        resp = (resp,)
+
+    for part in resp:
         
-    response = Response()
-    
-    if body_or_iter is not None:
-        if isinstance(body_or_iter, str):
-            if PY3:
-                response.text = body_or_iter
-            else:
-                response.text = unicode(body_or_iter, "utf-8")
-        elif isinstance(body_or_iter, bytes):
-            response.body = body_or_iter
-        elif isinstance(body_or_iter, Iterable):
-            if PY3:
-                if hasattr(body_or_iter, "__next__"):
-                    #print ("converting iterator")
-                    body_or_iter = (to_bytes(x) for x in body_or_iter)
-                else:
-                    # assume list or tuple
-                    #print ("converting list")
-                    body_or_iter = [to_bytes(x) for x in body_or_iter]
-            response.app_iter = body_or_iter
+        if app_iter is None and text is None:
+            if isinstance(part, dict):
+                app_iter = [json.dumps(part).encode("utf-8")]
+                content_type = "text/json"
+                continue
+            elif PY2 and isinstance(part, (str, bytes, unicode)):
+                app_iter = [part]
+                continue
+            elif PY3 and isinstance(part, bytes):
+                app_iter = [part]
+                continue
+            elif PY3 and isinstance(part, str):
+                text = part
+                continue
+            elif isinstance(part, list):
+                app_iter = [to_bytes(x) for x in part]
+                continue            
+            elif isinstance(part, Iterable):
+                app_iter = (to_bytes(x) for x in part)
+                continue            
+        
+        if isinstance(part, dict):
+            headers = part
+        elif isinstance(part, int):
+            status = part
+        elif isinstance(part, str):
+            content_type = part
         else:
-            raise ValueError("Unknown type for response body: " + str(type(body_or_iter)))
-
-    #print "makeResponse: extra: %s %s is str:%s" % (type(extra), extra, isinstance(extra, str))
-    
-    if status is not None:
-        response.status = status
-     
-    if extra is not None:
-        if isinstance(extra, dict):
-            response.headers = extra
-        elif isinstance(extra, str):
-            response.content_type = extra
-        elif isinstance(extra, int):
-            #print "makeResponse: setting status to %s" % (extra,)
-            response.status = extra
-        else:
-            raise ValueError("Unknown type for headers: " + repr(extra))
-#print response
-    
+            raise ValueError("Can not convert to a Response: " + repr(resp))
+            
+    #print("resp:", resp, " -->", "  app_iter:", app_iter,"  content_type:", content_type)
+            
+    response = Response(app_iter=app_iter, status=status)
+    if headers is not None: 
+        #print("setting headers:", headers)
+        response.headers = headers
+    if content_type:
+        response.content_type = content_type    # make sure to apply this after headers
+    if text is not None:  response.text = text
+    #print(response)
     return response
-
 
 class WPHandler:
 
@@ -206,6 +197,8 @@ class WPHandler:
     
     _Strict = False
     _MethodNames = None
+    
+    DefaultMethod = "index"
     
     def __init__(self, request, app):
         self.Request = request
@@ -217,7 +210,37 @@ class WPHandler:
         #self.RouteMap = []
         self._WebMethods = {}
         if not self._Strict:
-            self.addHandler("wp.debug", self._debug__)
+            self.addHandler(".env", self._env__)
+            
+    def step_down(self, name):
+        if not name:    return self
+        allowed = not self._Strict
+        attr = None
+        if hasattr(self, name):
+            attr = getattr(self, name)
+        elif name in self._WebMethods:
+            attr = self._WebMethods[name]
+            allowed = True
+            
+        if attr is None:
+            return None
+            
+        if callable(attr):
+            allowed = allowed or (
+                        (self._MethodNames is not None 
+                                and name in self._MethodNames)
+                    or
+                        (hasattr(method, "__doc__") 
+                                and method.__doc__ == _WebMethodSignature)
+                    )
+            if not allowed:
+                return None
+            return attr
+        elif isinstance(attr, WPHandler):
+            return attr
+        else:
+            return None
+            
         
     def addHandler(self, name, method):
         self._WebMethods[name] = method
@@ -229,101 +252,6 @@ class WPHandler:
         # override me
         pass
 
-    def wsgi_call(self, environ, start_response):
-        # path_to = '/'
-        path = environ.get('PATH_INFO', '')
-        path_down = path.split("/")
-        args = self.parseQuery(environ.get("QUERY_STRING", ""))
-        request = Request(environ)
-        try:
-            #response = self.walk_down(request, path_to, path_down)    
-            response = self.walk_down(request, "", path_down, args)    
-        except HTTPFound as val:    
-            # redirect
-            response = val
-        except HTTPException as val:
-            #print 'caught:', type(val), val
-            response = val
-        except HTTPResponseException as val:
-            #print 'caught:', type(val), val
-            response = val
-        except:
-            response = self.App.applicationErrorResponse(
-                "Uncaught exception", sys.exc_info())
-
-        try:    
-            response = makeResponse(response)
-        except ValueError as e:
-            response = self.App.applicationErrorResponse(str(e), sys.exc_info())
-        out = response(environ, start_response)
-        self.destroy()
-        self._destroy()
-        return out
-        
-    def parseQuery(self, query):
-        out = {}
-        for w in (query or "").split("&"):
-            if w:
-                words = w.split("=", 1)
-                k = words[0]
-                if k:
-                    v = None
-                    if len(words) > 1:  v = words[1]
-                    if k in out:
-                        old = out[k]
-                        if type(old) != type([]):
-                            old = [old]
-                            out[k] = old
-                        out[k].append(v)
-                    else:
-                        out[k] = v
-        return out
-        
-                
-    def walk_down(self, request, path, path_down, args):
-        self.Path = path or "/"
-
-        while path_down and not path_down[0]:
-            path_down = path_down[1:]
-            
-        method = None
-        if callable(self):
-            method = self
-        elif path_down:
-            name = path_down.pop(0)
-            
-            if name in self._WebMethods:
-                method = self._WebMethods[name]
-                if isinstance(method, (tuple, str, bytes, Response)):
-                    return method           # literal
-                
-            elif not name.startswith("_") and hasattr(self, name):
-                handler = getattr(self, name)
-                
-                if isinstance(handler, WPHandler):
-                    return handler.walk_down(request, path + "/" + name, path_down, args)
-
-                if callable(handler):
-                    allowed = True
-                    if self._Strict:
-                        allowed = (
-                                (self._MethodNames is not None 
-                                        and name in self._MethodNames)
-                            or
-                                (hasattr(method, "__doc__") 
-                                        and method.__doc__ == _WebMethodSignature)
-                            )
-                    if not allowed:
-                        return HTTPForbidden(request.path_info)
-                    method = handler
-                    
-        if method is None:
-            return HTTPNotFound("Invalid path %s" % (request.path_info,))
-            
-        relpath = "/".join(path_down)
-        return method(request, relpath, **args)                    
-        
-        
     def _checkPermissions(self, x):
         #self.apacheLog("doc: %s" % (x.__doc__,))
         try:    docstr = x.__doc__
@@ -439,10 +367,10 @@ class WPHandler:
         
     #
     # This web methods can be used for debugging
-    # call it as "../wp.debug"
+    # call it as "../.env"
     #
 
-    def _debug__(self, req, relpath, **args):
+    def _env__(self, req, relpath, **args):
         lines = (
             ["request.environ:"]
             + ["  %s = %s" % (k, repr(v)) for k, v in sorted(req.environ.items())]
@@ -517,27 +445,18 @@ class WPApp(object):
 
     Version = "Undefined"
 
-    def __init__(self, root_class, strict=False, 
+    def __init__(self, root_class_or_handler, strict=False, 
             static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix="", default_path="index",
+            prefix=None, replace_prefix="",
             environ={}):
 
-        import types
 
-        if isinstance(root_class, types.FunctionType):
-            # if it's in fact a function, use LambdaHandlerFactory to wrap 
-            # the function into a LambdaHandler
-            root_class = LambdaHandlerFactory(root_class)
-            
-        enable_static = enable_static or (static_location is not None)
-        enable_static = False
-        if static_location is None: static_location = "./static"
-        self.StaticPath = static_path
-        self.StaticLocation = static_location
-        #print("App init: StaticLocation:", static_location)
-        self.StaticEnabled = enable_static and static_location
-        
-        self.RootClass = root_class
+        self.RootHandler = self.RootClass = None
+        if inspect.isclass(root_class_or_handler):
+            self.RootClass = root_class_or_handler
+        else:
+            self.RootHandler = root_class_or_handler
+        #print("WPApp.__init__: self.RootClass=", self.RootClass, "   self.RootHandler=", self.RootHandler)
         self.JEnv = None
         self._AppLock = RLock()
         self.ScriptHome = None
@@ -546,7 +465,6 @@ class WPApp(object):
         self.ReplacePrefix = replace_prefix
         self.HandlerParams = []
         self.HandlerArgs = {}
-        self.DefaultPath = default_path
         self.Environ = {}
         self.Environ.update(environ)
         
@@ -604,7 +522,6 @@ class WPApp(object):
         #print exc_text
         return Response(text, status = '500 Application Error')
 
-
     def convertPath(self, path):
         if self.Prefix is not None:
             matched = None
@@ -629,10 +546,109 @@ class WPApp(object):
         self.HandlerArgs = args
         return self
 
+    def find_web_method(self, handler, request, path, path_down, args):
+        #
+        # walks down the tree of handler finds the web method and calls it
+        # returs the Response
+        #
+        
+        
+        path = path or "/"
+        method = None
+        while path_down and not path_down[0]:
+            path_down.pop(0)
+            
+        #is_wp_handler = isinstance(handler, WPHandler)
+        #print(f"find_web_method({handler}, WPHandler:{is_wp_handler}, path={path}, path_down={path_down})")
+
+        if isinstance(handler, WPHandler):  
+            handler.Path = path
+            
+            if path_down:
+                name = path_down[0]
+                attr = handler.step_down(name)
+                if attr is not None:
+                    if not path.endswith("/"):  path += "/"
+                    return self.find_web_method(attr, request, path + name, path_down[1:], args)
+                    
+            if callable(handler):
+                method = handler
+            elif not path_down:
+                prefix = (path.split("/")[-1] or ".") + "/"
+                redirect = prefix + handler.DefaultMethod
+                raise HTTPFound(location=redirect)
+        elif callable(handler):
+            method = handler
+            
+        relpath = "/".join(path_down)
+        return method, relpath
+
+    def parseQuery(self, query):
+        out = {}
+        for w in (query or "").split("&"):
+            if w:
+                words = w.split("=", 1)
+                k = words[0]
+                if k:
+                    v = None
+                    if len(words) > 1:  v = words[1]
+                    if k in out:
+                        old = out[k]
+                        if type(old) != type([]):
+                            old = [old]
+                            out[k] = old
+                        out[k].append(v)
+                    else:
+                        out[k] = v
+        return out
+        
+    def wsgi_call(self, root_handler, environ, start_response):
+        # path_to = '/'
+        path = environ.get('PATH_INFO', '')
+        #while "//" in path:
+        #    path.replace("//", "/")
+        path_down = path.split("/")
+        #while '' in path_down:
+        #    path_down.remove('')
+        args = self.parseQuery(environ.get("QUERY_STRING", ""))
+        request = Request(environ)
+        try:
+            method, relpath = self.find_web_method(root_handler, request, "", path_down, args)
+            #print("WPApp.wsgi_call: method:", method, "   relpath:", relpath)
+            if method is None:
+                response = HTTPNotFound("Invalid path %s" % (path,))
+            else:
+                #print("method:", method)
+                response = method(request, relpath, **args)  
+                #print("response:", response)                  
+            
+        except HTTPFound as val:    
+            # redirect
+            response = val
+        except HTTPException as val:
+            #print 'caught:', type(val), val
+            response = val
+        except HTTPResponseException as val:
+            #print 'caught:', type(val), val
+            response = val
+        except:
+            response = self.applicationErrorResponse("Uncaught exception", sys.exc_info())
+
+        try:    
+            response = makeResponse(response)
+        except ValueError as e:
+            response = self.applicationErrorResponse(str(e), sys.exc_info())
+        out = response(environ, start_response)
+        if isinstance(root_handler, WPHandler):
+            root_handler.destroy()
+            root_handler._destroy()
+        return out
+
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
-        environ["WebPie.original_path"] = path
+        if not "WebPie.original_path" in environ:
+            environ["WebPie.original_path"] = path
         environ.update(self.Environ)
         #print 'path:', path_down
 
@@ -641,41 +657,31 @@ class WPApp(object):
         if path is None:
             return HTTPNotFound()(environ, start_response)
         
-        if (not path or path=="/") and self.DefaultPath is not None:
-            #print ("redirecting to", self.DefaultPath)
-            return HTTPFound(location=self.DefaultPath)(environ, start_response)
+        #if (not path or path=="/") and self.DefaultPath is not None:
+        #    #print ("redirecting to", self.DefaultPath)
+        #    return HTTPFound(location=self.DefaultPath)(environ, start_response)
             
         environ["PATH_INFO"] = path
 
         req = Request(environ)
         if not self.Initialized:
-            self.ScriptName = environ.get('SCRIPT_NAME','')
-            self.Script = environ.get('SCRIPT_FILENAME', 
-                        os.environ.get('UWSGI_SCRIPT_FILENAME'))
+            self.ScriptName = environ.get('SCRIPT_NAME') or ''
+            self.Script = environ.get('SCRIPT_FILENAME') or \
+                        os.environ.get('UWSGI_SCRIPT_FILENAME')
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.init()
             self.Initialized = True
 
             self.init()
 
-        resp = None
+        root_handler = self.RootHandler or self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
+        #print("root_handler:", root_handler)
             
-        # ----- deprecated. Use WPStaticHandler -------
-        if self.StaticEnabled:
-            static_prefix = self.StaticPath
-            if not static_prefix.endswith("/"):
-                static_prefix = static_prefix + "/"
-            if path.startswith(static_prefix):
-                print("IMPORTANT: static contents handling by the WPApp is deprected. Please use WPStaticHandler instead.")
-                resp = self.static(path[len(static_prefix):])
-
-        if resp is None:
-            root = self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
-            try:
-                return root.wsgi_call(environ, start_response)
-            except:
-                resp = self.applicationErrorResponse(
-                    "Uncaught exception", sys.exc_info())
+        try:
+            return self.wsgi_call(root_handler, environ, start_response)
+        except:
+            resp = self.applicationErrorResponse(
+                "Uncaught exception", sys.exc_info())
         return resp(environ, start_response)
         
     def init(self):
