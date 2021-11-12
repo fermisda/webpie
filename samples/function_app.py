@@ -4,7 +4,7 @@ from webpie import WPApp
 
 def hello(request, relpath):
     who = relpath or "world"
-    return "Hello, "+who, "text/plain"
+    return f"Hello, {who}\n"
 
 WPApp(hello).run_server(8080)
 

@@ -221,7 +221,7 @@ class WPHandler:
         elif name in self._WebMethods:
             attr = self._WebMethods[name]
             allowed = True
-
+            
         if attr is None:
             return None
             
@@ -555,9 +555,11 @@ class WPApp(object):
         
         path = path or "/"
         method = None
-        
+        while path_down and not path_down[0]:
+            path_down.pop(0)
+            
         #is_wp_handler = isinstance(handler, WPHandler)
-        #print(f"walk_down({handler}, WPHandler:{is_wp_handler}, path={path}, path_down={path_down})")
+        #print(f"find_web_method({handler}, WPHandler:{is_wp_handler}, path={path}, path_down={path_down})")
 
         if isinstance(handler, WPHandler):  
             handler.Path = path
@@ -565,7 +567,6 @@ class WPApp(object):
             if path_down:
                 name = path_down[0]
                 attr = handler.step_down(name)
-                #print(f"step_down({name}) -> {attr}")
                 if attr is not None:
                     if not path.endswith("/"):  path += "/"
                     return self.find_web_method(attr, request, path + name, path_down[1:], args)
