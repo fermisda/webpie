@@ -14619,8 +14619,7 @@ Fri Nov <span class="m">12</span> <span class="m">15</span>:16:07 <span class="m
         <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">ctime</span><span class="p">()</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
 
 <span class="k">class</span> <span class="nc">Greeter</span><span class="p">(</span><span class="n">WPHandler</span><span class="p">):</span>
-    <span class="k">def</span> <span class="nf">hello</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">relpath</span><span class="p">,</span>             <span class="c1"># &lt;- http://host:port/greet/hello </span>
-              <span class="n">name</span><span class="o">=</span><span class="s2">&quot;stranger&quot;</span><span class="p">):</span>    
+    <span class="k">def</span> <span class="nf">hello</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">relpath</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;stranger&quot;</span><span class="p">):</span>    <span class="c1"># &lt;- http://host:port/greet/hello </span>
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Hello, </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
 
 <span class="k">class</span> <span class="nc">RootHandler</span><span class="p">(</span><span class="n">WPHandler</span><span class="p">):</span>
@@ -14662,7 +14661,7 @@ Hello, stranger
 <div class="jp-Cell-inputWrapper"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput " data-mime-type="text/markdown">
 <ul>
-<li>Convenience return options - will be converted to the Response object by the framework<ul>
+<li>Convenience return options<ul>
 <li>str -&gt; HTTP response with given body and 200 status code</li>
 <li>bytes -&gt; HTTP response with given body and 200 status code</li>
 <li>int -&gt; HTTP response with given status code, empty body</li>
@@ -14672,7 +14671,7 @@ Hello, stranger
 <li>(iterable, string) -&gt; body, content type</li>
 <li>(iterable, dictionary) -&gt; body, headers=dictionary</li>
 <li>dictionary -&gt; body=json.dumps(dictionary), content_type="text/json"</li>
-<li>... <em>many more</em> - all will be converted to Response(...)</li>
+<li>... <em>many more</em> - all will be converted to Response(...) by webpie</li>
 </ul>
 </li>
 </ul>
@@ -14970,7 +14969,7 @@ $ python wsgi_app.py <span class="m">9000</span>
 <li>HTTPS support</li>
 <li>Jinja2 support - if jinja2 is installed</li>
 <li>Built in HTTP/HTTPS server<ul>
-<li>multithreaded</li>
+<li>multi-threaded</li>
 <li>multi-port</li>
 <li>multi-process</li>
 <li>multi-app - route by URL path prefix</li>
