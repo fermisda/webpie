@@ -293,7 +293,26 @@ class MultiServerSubprocess(Process):
             #print("--------")
         names = ",".join(s.Name for s in service_list)
         if self.Server is None:
-            self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
+            config = self.Config
+            
+            port = config["port"]
+        
+            timeout = config.get("timeout", 20.0)
+            max_connections = config.get("max_connections", 100)
+            queue_capacity = config.get("queue_capacity", 100)
+
+            # TLS
+            certfile = config.get("cert")
+            keyfile = config.get("key")
+            verify = config.get("verify", "none")
+            ca_file = config.get("ca_file")
+            password = config.get("password")
+
+            self.Server = HTTPServer(
+                    port, services=service_list, logger=self.Logger,
+                    timeout = timeout, max_queued = queue_capacity, max_connections=max_connections,
+                    certfile=certfile, keyfile=keyfile, verify=verify, ca_file=ca_file, password=password
+            )
             self.log(f"server created with services: {names}")
         else:
             self.Server.setServices(service_list)
