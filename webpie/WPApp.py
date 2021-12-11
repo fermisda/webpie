@@ -446,9 +446,7 @@ class WPApp(object):
     Version = "Undefined"
 
     def __init__(self, root_class_or_handler, strict=False, 
-            static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix="",
-            environ={}):
+            prefix=None, replace_prefix="", environ={}):
 
 
         self.RootHandler = self.RootClass = None
@@ -671,8 +669,6 @@ class WPApp(object):
             self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
             self.init()
             self.Initialized = True
-
-            self.init()
 
         root_handler = self.RootHandler or self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
         #print("root_handler:", root_handler)
