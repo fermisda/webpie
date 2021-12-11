@@ -3,6 +3,15 @@ WebPie
 ======
 
 WebPie (another way of spelling web-py) is a web application development framework for Python based on the WSGI standard.
+WebPie differs from other similar frameworks in the following ways:
+
+ * WebPie is intuitive and easy to start using
+ * WebPie is object oriented and Python friendly
+ * WebPie maps URL to the code structure in natural way
+ * WebPie makes it easy to develop multi-threaded applications
+ * Web application development with WebPie is fast and efficient
+ * WebPie is compatible with WSGI standard
+ 
 WebPie makes it simple to develop thread-safe object-oriented web applications.
 
 Hello World in WebPie
@@ -12,29 +21,62 @@ Here is the simplest WebPie application you can write:
 
 .. code-block:: python
 
-	# hello_world.py
+	# hello.py
 
-	from webpie import WPApp, WPHandler		
+	from webpie import WPApp		
 		
-	class MyHandler(WPHandler):                         # 1
-	
-	    def hello(self, request, relpath):              # 2
-	        return "Hello, World!\n"                    # 3
+	def server(request, relpath):                   # 1
+	    return "Hello, World!\n"                    # 2
 			
-	application = WPApp(MyHandler)                      # 4
+	WPApp(hello).run_server(8000)                   # 3
 
 
 Let's go over the code line by line:
 
-1. We created class MyHandler, which will handle HTTP requests. In order to work with WebPie, it has to be a subclass of WPHandler class.
+1. We define so called *web method* ``server``. In WebPie, web method accepts 2 positional arguments, ``request`` and ``relpath``. They are not used in this examle though.
 
-2. We defined one web method "hello", which will be called when a URL like http://host.org/hello is requested.
+2. Our ``server`` web method will always produce HTTP response with text "Hello, World!".
 
-3. It will always return text "Hello, World!".
+3. We create WebPie application ``WPApp`` and we start our aplication as a HTTP server on port 8000.
 
-4. Finally, we created a WSGI application as an instance of WPApp class, passing it the MyHandler class as an argument.
+Now we can run our application like this:
 
-Now we can plug our application into any WSGI framework such as uWSGI or Apache httpd, e.g.:
+.. code-block:: bash
+
+	$ python hello.py
+
+This server will respond to HTTP requests like this:
+
+.. code-block:: bash
+
+	$ curl http://localhost:8080
+	Hello, World!
+	$ 
+
+Let's add a bit more functionality to our web application. Let's see how we can pass some arguments to our server.
+
+.. code-block:: python
+
+	# hello_name.py
+
+	from webpie import WPApp		
+		
+	def server(request, name):                      # 1
+        name = name or "World"
+	    return f"Hello, {name}!\n"                  # 2
+			
+	WPApp(hello).run_server(8000)                   # 3
+
+.. code-block:: bash
+
+	$ curl http://localhost:8080/hello
+	Hello, World!
+	$ curl http://localhost:8080/hello/webpie
+	Hello, webpie!
+	$ 
+
+
+
 
 .. code-block:: bash
 
