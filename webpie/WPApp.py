@@ -450,7 +450,6 @@ class WPApp(object):
             prefix=None, replace_prefix="",
             environ={}):
 
-
         self.RootHandler = self.RootClass = None
         if inspect.isclass(root_class_or_handler):
             self.RootClass = root_class_or_handler
@@ -502,13 +501,11 @@ class WPApp(object):
                 
     @app_synchronized
     def setJinjaFilters(self, filters):
-            for n, f in filters.items():
-                self.JEnv.filters[n] = f
+        for n, f in filters.items():
+            self.JEnv.filters[n] = f
 
-    @app_synchronized
     def setJinjaGlobals(self, globals):
-            self.JGlobals = {}
-            self.JGlobals.update(globals)
+        self.JGlobals = globals.copy()
 
     def applicationErrorResponse(self, headline, exc_info):
         typ, val, tb = exc_info
