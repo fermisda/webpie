@@ -219,8 +219,7 @@ class MPLogger(PyThread):
         # subprocess side
         #
         parts = tuple(str(p) for p in parts)
-        if self.Logger is not None:
-            self.Queue.put((who, time.time())+parts)
+        self.Queue.put((who, time.time())+parts)
             
     def debug(self, who, *parts):
         #
@@ -228,6 +227,12 @@ class MPLogger(PyThread):
         #
         if self.Debug:
             self.log(f"{who} [DEBUG]", *parts)
+
+    def error(self, who, *parts):
+        #
+        # subprocess side
+        #
+        self.log(f"{who} [ERROR]", *parts)
 
 class MultiServerSubprocess(Process):
     

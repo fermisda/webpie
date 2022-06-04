@@ -1,18 +1,29 @@
 # http_server.py
 
-from webpie import HTTPServer, WPHandler, WPApp
+from webpie import HTTPServer, WPHandler, WPApp, Logger
 import sys, time
 
 class TimeHandler(WPHandler):
     
-    def time(self, relpath, **args):            # simple "what time is it?" server
-        return time.ctime(time.time())
+    def time(self, request, relpath, **args):            # simple "what time is it?" server
+        t = time.ctime(time.time())
+        return f"""
+            <html>
+            <head></head>
+            <body>
+                <p>Time is: {t}</p>
+            </body>
+            </html>        
+        """
 
 app = WPApp(TimeHandler)                        # create app object
 
-port = 8080
+port = 8181
 
-srv = HTTPSServer(port, app,                    # create HTTP server thread - subclass of threading.Thread
+logger = Logger("-", debug=True)
+
+srv = HTTPServer(port, app,                    # create HTTP server thread - subclass of threading.Thread
+    logging=True, logger=logger,
     max_connections=3, max_queued=5             # concurrency contorl
 )     
                

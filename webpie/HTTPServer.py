@@ -377,11 +377,12 @@ class RequestReader(Task, Logged):
     def __init__(self, dispatcher, request, socket_wrapper, timeout, logger):
         Task.__init__(self)
         self.Request = request
-        Logged.__init__(self, f"[reader {request.Id}]", logger, debug=True)
+        csock_addr = request.CSock.getpeername()
+        Logged.__init__(self, f"[reader {request.Id} client:{csock_addr}]", logger, debug=True)
         self.SocketWrapper = socket_wrapper
         self.Dispatcher = dispatcher
         self.Timeout = timeout
-        
+        self.debug("created")
     def __str__(self):
         return "[reader %s]" % (self.Request.Id, )
         
@@ -426,23 +427,24 @@ class RequestReader(Task, Logged):
                 else:
                     request.HTTPHeader = header
                     request.Body = body
+                    self.debug("request received")
                     service = self.Dispatcher.dispatch(self.Request)
                     dispatched = service is not None
         finally:
             if not dispatched:
-                try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
-                except: pass
-                request.close()
                 if header is not None and header.Complete:
+                    try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
+                    except: pass
                     self.log('%s:%s :%s %s %s -> (nomatch)' % 
                         (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
                             header.Method, header.OriginalURI
                         )
                     )
                 else:
-                    self.debug('%s:%s :%s (request reading error)' % 
+                    self.log('%s:%s :%s (request reading error)' % 
                         (   request.CAddr[0], request.CAddr[1], request.ServerPort)
                     )
+                request.close()
                     
             self.SocketWrapper = self.Dispatcher = self.Logger = None
 
