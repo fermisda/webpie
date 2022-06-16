@@ -457,11 +457,17 @@ class SSLSocketWrapper(object):
         self.SSLContext.load_cert_chain(certfile, keyfile, password=password)
         if ca_file is not None:
             self.SSLContext.load_verify_locations(cafile=ca_file)
-        self.SSLContext.verify_mode = {
+        verify_flags = {
                 "none":ssl.CERT_NONE,
                 "optional":ssl.CERT_OPTIONAL,
                 "required":ssl.CERT_REQUIRED
-            }[verify]
+            }
+        try:    verify_flags["allow_proxies"] = ssl.VERIFY_ALLOW_PROXY_CERTS            # added in Python 3.10
+        except AttributeError:
+            pass
+        try:    self.SSLContext.verify_mode = verify_flags[verify]
+        except KeyError:
+            raise ValueError(f"Unrecognized verify mode: {verify}")
         self.SSLContext.load_default_certs()
             
     def wrap(self, sock):
