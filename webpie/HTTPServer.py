@@ -450,7 +450,7 @@ class RequestReader(Task, Logged):
 
 class SSLSocketWrapper(object):
      
-    def __init__(self, certfile, keyfile, verify, ca_file, password):
+    def __init__(self, certfile, keyfile, verify, ca_file, password, allow_proxies=False):
         import ssl
         
         self.SSLContext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
@@ -462,12 +462,18 @@ class SSLSocketWrapper(object):
                 "optional":ssl.CERT_OPTIONAL,
                 "required":ssl.CERT_REQUIRED
             }
-        try:    verify_flags["allow_proxies"] = ssl.VERIFY_ALLOW_PROXY_CERTS            # added in Python 3.10
-        except AttributeError:
-            pass
         try:    self.SSLContext.verify_mode = verify_flags[verify]
         except KeyError:
             raise ValueError(f"Unrecognized verify mode: {verify}")
+
+        flags = 0
+        try:
+            if allow_proxies:
+                flags |= ssl.VERIFY_ALLOW_PROXY_CERTS    
+        except AttributeError:
+            raise ValueError("X.509 proxies are not supported by the ssl module")
+        self.SSLContext.verify_flags = flags
+        
         self.SSLContext.load_default_certs()
             
     def wrap(self, sock):
@@ -480,7 +486,7 @@ class HTTPServer(PyThread, Logged):
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = "-", debug=None,
-                certfile=None, keyfile=None, verify="none", ca_file=None, password=None
+                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False,
                 ):
         PyThread.__init__(self)
         self.Port = port
@@ -495,7 +501,8 @@ class HTTPServer(PyThread, Logged):
         max_connections =  max_connections
         queue_capacity = max_queued
         self.RequestReaderQueue = TaskQueue(max_connections, capacity=queue_capacity, delegate=self)
-        self.SocketWrapper = SSLSocketWrapper(certfile, keyfile, verify, ca_file, password) if keyfile else None
+        self.SocketWrapper = SSLSocketWrapper(certfile, keyfile, verify, ca_file, password,
+                allow_proxies=allow_proxies) if keyfile else None
         
         if app is not None:
             services = [Service(app, logger)]
