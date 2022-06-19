@@ -1,6 +1,6 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
-from webpie import Logged, Logger, HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
+from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
 
 import re, socket
@@ -208,18 +208,18 @@ class MPLogger(PyThread):
         from queue import Empty
         while True:
             msg = self.Queue.get()
-            who, t = msg[:2]
-            parts = [str(p) for p in msg[2:]]
+            service, stream, t = msg[:3]
+            parts = [str(p) for p in msg[3:]]
             t = datetime.datetime.fromtimestamp(t)
             process_timestamp = t.strftime("%m/%d/%Y %H:%M:%S") + ".%03d" % (t.microsecond//1000)
-            self.Logger.log(who, "%s: %s" % (process_timestamp, " ".join(parts)))
+            self.Logger.log_to_stream(stream, "%s: %s" % (process_timestamp, " ".join(parts)), t=t)
     
-    def log(self, who, *parts):
+    def log_to_stream(self, stream, *message, sep=" ", who=None):
         #
         # subprocess side
         #
         parts = tuple(str(p) for p in parts)
-        self.Queue.put((who, time.time())+parts)
+        self.Queue.put((who, stream, time.time())+parts)
             
     def debug(self, who, *parts):
         #
