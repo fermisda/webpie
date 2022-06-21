@@ -193,18 +193,168 @@ class HTTPHeader(object):
 
     def as_bytes(self, original=False):
         return to_bytes(self.as_text(original))
-        
-class RequestProcessor(Task, Logged):
+
+class RequestProcessor(Task):
     
-    def __init__(self, wsgi_app, request, logger):
-        Task.__init__(self, name=f"[RequestProcessor {request.Id}]")
-        #print("RequestProcessor: wsgi_app:", wsgi_app)
+    def __init__(self, wsgi_app, request):
+        Task.__init__(self, name=f"[RequestTask {request.Id}]")
+        #print("RequestTask: wsgi_app:", wsgi_app)
         self.WSGIApp = wsgi_app
         self.Request = request
         self.OutBuffer = ""
-        self.ResponseStatus = None
-        Logged.__init__(self, request.Id, logger)
+        self.StatusCode = None
+        self.ByteCount = 0
+        self.Error = None
+
+    def run(self):       
+        request = self.Request
+        try:
+            env = request.wsgi_env() 
+            header = request.HTTPHeader
+            csock = request.CSock
+
+            if env["WebPie.headers"].get("Expect") == "100-continue":
+                csock.sendall(b'HTTP/1.1 100 Continue\n\n')
+                    
+            out = []
+            
+            try:
+                #print("env:")
+                #for k, v in env.items():
+                #    print(k,":",v)
+                out = self.WSGIApp(env, self.start_response)    
+            except:
+                error = "error in wsgi_app: %s" % (traceback.format_exc(),)
+                csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
+                return self.error(error)
+            
+            if self.OutBuffer:      # from start_response
+                csock.sendall(to_bytes(self.OutBuffer))
+                
+            self.ByteCount = 0
+
+            for line in out:
+                line = to_bytes(line)
+                try:    csock.sendall(line)
+                except Exception as e:
+                    return self.error("error sending body: %s" % (e,))
+                self.ByteCount += len(line)
+        finally:
+            request.close()
+            self.OutBuffer = None
+            self.WSGIApp = None
+        return request
+
+    def error(self, error):
+        self.Error = error
+
+    def start_response(self, status, headers):
+        self.StatusCode = int(status.split(None, 1)[0])
+        out = ["HTTP/1.1 " + status]
+        for h,v in headers:
+            if h != "Connection":
+                out.append("%s: %s" % (h, v))
+        out.append("Connection: close")     # can not handle keep-alive
+        out.append(f"X-WebPie-Request-Id: {self.Request.Id}")
+        self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
+
+class Service(Logged):
+    
+    def __init__(self, app, logger=None):
+        Logged.__init__(self, f"[{app.__class__.__name__}]", logger=logger)
+        self.Name = app.__class__.__name__
+        self.WPApp = app
+        self.ProcessorQueue = TaskQueue(5, delegate=self)
+
+    def accept(self, request):
+        p = RequestProcessor(self.WPApp, request)
+        request.AppName = self.Name
+        self.ProcessorQueue << p
+        return True
+
+    def taskFailed(self, queue, task, exc_type, exc_value, tb):
+        self.error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
+        try:
+            task.Request.close()
+        except:
+            pass
+
+    def taskEnded(self, queue, task, request):
+        header = request.HTTPHeader
+        log_line = '%s:%s :%s %s %s -> %s %s %s %s' % (   
+                        request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                        header.Method, header.OriginalURI, 
+                        request.AppName, header.path(),
+                        task.StatusCode, task.ByteCount
+                    )
+        self.log(log_line)
+
+
+class Request(object):
+    
+    def __init__(self, port, csock, caddr):
+        self.Id = uid()
+        self.ServerPort = port
+        self.CSock = csock
+        self.CAddr = caddr
+        self.HTTPHeader = None
+        self.Body = b''
+        self.SSLInfo = None     
+        self.AppName = None
+        self.Environ = {}
         
+    def close(self):
+        if self.CSock is not None:
+            try:    self.CSock.close()
+            except: pass
+            self.CSock = None
+        self.SSLInfo = None
+
+    def wsgi_env(self):
+        header = self.HTTPHeader
+        ssl_info = self.SSLInfo
+        csock = self.CSock
+
+        env = dict(
+            REQUEST_METHOD = header.Method.upper(),
+            PATH_INFO = header.path(),
+            SCRIPT_NAME = "",
+            SCRIPT_FILENAME = "",
+            SERVER_PROTOCOL = header.Protocol,
+            QUERY_STRING = header.query(),
+        )
+        env.update(self.Environ)
+        env["wsgi.url_scheme"] = "http"
+        env["WebPie.request_id"] = self.Id
+        env["WebPie.headers"] = header.Headers
+
+        if ssl_info != None:
+            subject, issuer = self.x509_names(ssl_info)
+            env["SSL_CLIENT_S_DN"] = subject
+            env["SSL_CLIENT_I_DN"] = issuer
+            env["wsgi.url_scheme"] = "https"
+        
+        env["query_dict"] = self.parseQuery(header.query())
+        
+        #print ("processRequest: env={}".format(env))
+        body_length = None
+        for h, v in header.Headers.items():
+            h = h.lower()
+            if h == "content-type": env["CONTENT_TYPE"] = v
+            elif h == "host":
+                words = v.split(":",1)
+                words.append("")    # default port number
+                env["HTTP_HOST"] = v
+                env["SERVER_NAME"] = words[0]
+                env["SERVER_PORT"] = words[1]
+            elif h == "content-length": 
+                env["CONTENT_LENGTH"] = body_length = int(v)
+            else:
+                env["HTTP_%s" % (h.upper().replace("-","_"),)] = v
+
+        env["wsgi.input"] = BodyFile(self.Body, csock, body_length)
+        return env
+
     def parseQuery(self, query):
         out = {}
         for w in query.split("&"):
@@ -240,136 +390,7 @@ class RequestProcessor(Task, Logged):
                     issuer = self.format_x509_name(x509.get_issuer())
         return subject, issuer
 
-    def run(self):        
-        request = self.Request
-        header = request.HTTPHeader
-        ssl_info = request.SSLInfo
-        csock = request.CSock
 
-        env = dict(
-            REQUEST_METHOD = header.Method.upper(),
-            PATH_INFO = header.path(),
-            SCRIPT_NAME = "",
-            SCRIPT_FILENAME = "",
-            SERVER_PROTOCOL = header.Protocol,
-            QUERY_STRING = header.query(),
-        )
-        env.update(request.Environ)
-        env["wsgi.url_scheme"] = "http"
-        env["WebPie.request_id"] = request.Id
-
-        if ssl_info != None:
-            subject, issuer = self.x509_names(ssl_info)
-            env["SSL_CLIENT_S_DN"] = subject
-            env["SSL_CLIENT_I_DN"] = issuer
-            env["wsgi.url_scheme"] = "https"
-        
-        if header.Headers.get("Expect") == "100-continue":
-            csock.sendall(b'HTTP/1.1 100 Continue\n\n')
-                
-        env["query_dict"] = self.parseQuery(header.query())
-        
-        #print ("processRequest: env={}".format(env))
-        body_length = None
-        for h, v in header.Headers.items():
-            h = h.lower()
-            if h == "content-type": env["CONTENT_TYPE"] = v
-            elif h == "host":
-                words = v.split(":",1)
-                words.append("")    # default port number
-                env["HTTP_HOST"] = v
-                env["SERVER_NAME"] = words[0]
-                env["SERVER_PORT"] = words[1]
-            elif h == "content-length": 
-                env["CONTENT_LENGTH"] = body_length = int(v)
-            else:
-                env["HTTP_%s" % (h.upper().replace("-","_"),)] = v
-
-        env["wsgi.input"] = BodyFile(request.Body, csock, body_length)
-        
-        out = []
-        
-        try:
-            #print("env:")
-            #for k, v in env.items():
-            #    print(k,":",v)
-            out = self.WSGIApp(env, self.start_response)    
-        except:
-            self.log_error("error in wsgi_app: %s" % (traceback.format_exc(),))
-            self.start_response("500 Error", 
-                            [("Content-Type","text/plain")])
-            self.OutBuffer = error = traceback.format_exc()
-            self.log_error(request.CAddr, error)
-        
-        if self.OutBuffer:      # from start_response
-            csock.sendall(to_bytes(self.OutBuffer))
-            
-        byte_count = 0
-
-        for line in out:
-            line = to_bytes(line)
-            try:    csock.sendall(line)
-            except Exception as e:
-                self.log_error(request.CAddr, "error sending body: %s" % (e,))
-                break
-            byte_count += len(line)
-        else:
-            self.log('%s:%s :%s %s %s -> %s %s %s %s' % 
-                (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
-                    header.Method, header.OriginalURI, 
-                    request.AppName, header.path(), 
-                    self.ResponseStatus, byte_count
-                )
-            )
-
-        request.close()
-        self.debug("done. socket closed")
-
-    def start_response(self, status, headers):
-        self.debug("start_response(%s)" % (status,))
-        self.ResponseStatus = status.split()[0]
-        out = ["HTTP/1.1 " + status]
-        for h,v in headers:
-            if h != "Connection":
-                out.append("%s: %s" % (h, v))
-        out.append("Connection: close")     # can not handle keep-alive
-        out.append(f"X-WebPie-Request-Id: {self.Request.Id}")
-        self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
-
-class Service(Logged):
-    
-    def __init__(self, app, logger=None):
-        Logged.__init__(self, f"[app {app.__class__.__name__}]", logger)
-        self.Name = app.__class__.__name__
-        self.WPApp = app
-        self.ProcessorQueue = TaskQueue(5)
-        
-    def accept(self, request):
-        p = RequestProcessor(self.WPApp, request, self.Logger)
-        request.AppName = self.Name
-        self.ProcessorQueue << p
-        return True
-
-class Request(object):
-    
-    def __init__(self, port, csock, caddr):
-        self.Id = uid()
-        self.ServerPort = port
-        self.CSock = csock
-        self.CAddr = caddr
-        self.HTTPHeader = None
-        self.Body = b''
-        self.SSLInfo = None     
-        self.AppName = None
-        self.Environ = {}
-        
-    def close(self):
-        if self.CSock is not None:
-            try:    self.CSock.close()
-            except: pass
-            self.CSock = None
-        self.SSLInfo = None
-        
 class RequestReader(Task, Logged):
 
     MAXMSG = 100000
@@ -378,11 +399,12 @@ class RequestReader(Task, Logged):
         Task.__init__(self)
         self.Request = request
         csock_addr = request.CSock.getpeername()
-        Logged.__init__(self, f"[reader {request.Id} client:{csock_addr}]", logger, debug=True)
+        Logged.__init__(self, f"[reader {request.Id} client:{csock_addr}]", logger=logger, debug=True)
         self.SocketWrapper = socket_wrapper
         self.Dispatcher = dispatcher
         self.Timeout = timeout
         self.debug("created")
+
     def __str__(self):
         return "[reader %s]" % (self.Request.Id, )
         
@@ -485,7 +507,7 @@ class HTTPServer(PyThread, Logged):
     def __init__(self, port, app=None, services=[], sock=None, logger=None, max_connections = 100, 
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
-                logging = False, log_file = "-", debug=None,
+                logging = False, log_file = "-", debug=False,
                 certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False,
                 ):
         PyThread.__init__(self)
@@ -495,7 +517,7 @@ class HTTPServer(PyThread, Logged):
         if logger is None and logging:
             logger = Logger(log_file)
             #print("logs sent to:", f)
-        Logged.__init__(self, f"[server {self.Port}]", logger, debug=True)
+        Logged.__init__(self, f"[server {self.Port}]", logger=logger, debug=debug)
         self.Logger = logger
         self.Timeout = timeout
         max_connections =  max_connections
@@ -509,6 +531,8 @@ class HTTPServer(PyThread, Logged):
             
         self.Services = services
         self.Stop = False
+
+
         
     def close(self):
         self.Stop = True
@@ -577,7 +601,7 @@ class HTTPServer(PyThread, Logged):
     def connection_accepted(self, csock, caddr):        # called externally by multiserver
         request = Request(self.Port, csock, caddr)
         self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
-        reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self.Logger)
+        reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self)
         self.RequestReaderQueue << reader
         
     @synchronized
