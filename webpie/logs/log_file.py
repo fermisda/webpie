@@ -13,10 +13,9 @@ def make_timestamp(t=None):
                 
 class LogStream(Primitive):
 
-    def __init__(self, stream, add_timestamp=True, name=None, **ignore):
-        Primitive.__init__(self, name=name)
+    def __init__(self, stream, **ignore):
+        Primitive.__init__(self, name=f"LogStream({stream})")
         self.Stream = stream            # sys.stdout, sys.stderr
-        self.AddTimestamps = add_timestamp
 
     @synchronized
     def log(self, msg, raw=False, t=None):
@@ -33,7 +32,7 @@ class LogFile(Primitive):
     
         def __init__(self, path, interval = '1d', keep = 10, add_timestamp=True, append=True, flush_interval=None, name=None):
             # interval = 'midnight' means roll over at midnight
-            Primitive.__init__(self, name=name)
+            Primitive.__init__(self, name=f"LogFile({path})")
             self.File = None
             assert isinstance(path, str), "LogFile.__init__: path must be a string. Got %s %s instead" % (type(path), path) 
             self.Path = path
@@ -58,10 +57,13 @@ class LogFile(Primitive):
             self.LineBuf = ''
             self.LastLog = None
             self.LastFlush = time.time()
+            append = append and os.path.isfile(self.Path)
             if append:
                 self.File = open(self.Path, 'a')
-                self.File.write("%s: [appending to old log]\n" % (make_timestamp(),))
+                self.File.write("%s: --- log reopened ---\n" % (make_timestamp(),))
                 self.CurLogBegin = time.time()
+            else:
+                self.newLog()
             #print("LogFile: created with file:", self.File)
             if flush_interval is not None:
                 self.arm_flush_timer(flush_interval)
@@ -90,8 +92,7 @@ class LogFile(Primitive):
                         self.newLog()
             elif isinstance(self.Interval, (int, float)):
                 if t > self.CurLogBegin + self.Interval:
-                        self.newLog()
-                timestamp = make_timestamp(t)
+                    self.newLog()
             if t != False and not raw:
                 msg = "%s: %s" % (make_timestamp(t), msg)
             self._write(msg if raw else msg + "\n")

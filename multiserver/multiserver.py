@@ -2,6 +2,7 @@ import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
+from webpie.logs import Logger, Logged, AbstractLogger
 
 import re, socket
 
@@ -41,10 +42,11 @@ def services_from_config(config):
         else:
             yield svc_cfg
 
-class RequestTask(Task):
+class RequestTask(Task, Logged):
     
-    def __init__(self, wsgi_app, request):
+    def __init__(self, wsgi_app, request, logger):
         Task.__init__(self, name=f"[RequestTask {request.Id}]")
+        Logged.__init__(self, f"[RequestTask {request.Id}]", logger=logger)
         #print("RequestTask: wsgi_app:", wsgi_app)
         self.WSGIApp = wsgi_app
         self.Request = request
@@ -106,34 +108,22 @@ class RequestTask(Task):
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
 
 
-class Service(Primitive):
+class Service(Primitive, Logged):
     
     def __init__(self, config, logger=None):
         name = config["name"]
         #print("Service(): config:", config)
         self.ServiceName = name
-        self.LogName = f"[service {name}]"
         self.Logger = logger
+        Logged.__init__(self, name, logger=logger)
         self.Debug = config.get("debug", False)
         Primitive.__init__(self, name=f"[service {name}]")        
         self.Config = None
         self.Initialized = self.initialize(config)
 
-    def log(self, *message):
-        if self.Logger is not None:
-            self.Logger.log(self.LogName, *message)
-
-    def debug(self, *message):
-        if self.Logger is not None and self.Debug:
-            self.Logger.debug(self.LogName, *message)
-
-    def error(self, *message):
-        if self.Logger is not None:
-            self.Logger.error(self.LogName, *message)
-
     def log_request(self, *message):
         if self.Logger is not None:
-            self.Logger.log(self.LogName, *message, stream="requests")
+            self.Logger.log(*message, channel="requests")
 
     @synchronized
     def initialize(self, config=None):
@@ -248,17 +238,16 @@ class Service(Primitive):
         except:
             pass
 
-    def taskEnded(self, queue, task):
+    def taskEnded(self, queue, task, result):
         request = task.Request
         header = request.HTTPHeader
-        log_line = '%s:%s :%s %s %s -> %s %s %s %s' % (   
+        log_line = '%s:%s :%s %s %s -> [%s] %s %s %s' % (   
                         request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
                         self.ServiceName, header.path(),
-                        request.ResponseStatus, request.ByteCount
+                        task.ResponseStatus, task.ByteCount
                     )
-
-
+        self.log(log_line, channel="requests")
 
     def accept(self, request):
         #print(f"Service {self}: accept()")
@@ -308,16 +297,17 @@ class Service(Primitive):
             return False
         self.Initialized = self.initialize()
 
-class MPLogger(PyThread):
+class MPLogger(PyThread, Logged):
     
-    def __init__(self, config_file, queue_size=-1, debug=False, name=None):
+    def __init__(self, config_file, queue_size=-1, name=None):
         import multiprocessing
+        Logged.__init__(self, "MPLogger")
         PyThread.__init__(self, name=name, daemon=True)
-        self.Logger = logger
         self.Queue = multiprocessing.Queue(queue_size)
-        self.Debug = debug
         self.ConfigFile = config_file
         self.Loggers = {}           # {"sevice" -> Logger}
+        self.Debug = {}
+        self.reconfigure()
 
     def reconfigure(self):
         #
@@ -325,12 +315,14 @@ class MPLogger(PyThread):
         #
         self.Loggers = {}
         config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
-        logs_dir = config.get("logs", "logs")
+        log_config = config.get("logger", {})
+        logs_dir = log_config.get("logs_dir", "logs")
         if not os.path.isdir(logs_dir):
             raise ValueError(f"Logs directory {logs_dir} not found")
         for service_cfg in services_from_config(config):
+            #print("MPLogger: service_cfg:", service_cfg)
             name = service_cfg["name"]
-            debug = service_cfg.get("debug", False)
+            self.Debug[name] = debug = service_cfg.get("debug", False)
             log_file = service_cfg.get("log", f"{name}.log")
             if not log_file.startswith('/'):
                 log_file = logs_dir + "/" + log_file
@@ -338,8 +330,9 @@ class MPLogger(PyThread):
             if not requests_file.startswith('/'):
                 requests_file = logs_dir + "/" + requests_file
             logger = Logger(log_file, debug=debug)
-            logger.add_stream("requests", requests_file)
+            logger.add_channel("requests", path=requests_file)
             self.Loggers[name] = logger
+            #print(f"MPLogger: added logger for service '{name}'")
 
     def run(self):
         #
@@ -348,29 +341,33 @@ class MPLogger(PyThread):
         from queue import Empty
         while True:
             msg = self.Queue.get()
-            service, stream, t = msg[:3]
-            parts = [str(p) for p in msg[3:]]
-            self.Loggers[service].log_to_stream(stream, *parts, who=service, t=t)
+            who, channel, t = msg[:3]
+            parts = msg[3:]
+            print("MPLogger: message:", who, channel, t, parts)
+            if who in self.Loggers:
+                self.Loggers[who].log(*parts, who=f"[{who}]", t=t, channel=channel)
+            else:
+                Logged.log(self, *parts, who=who, t=t, channel=channel)
     
     #
     # subprocess side
     #
-    def log(self, who, *message, stream="log"):
+    def log(self, *message, sep=" ", who=None, t=None, channel="log"):
         message = tuple(str(p) for p in message)
-        self.Queue.put((who, stream, time.time())+message)
+        self.Queue.put((who, channel, time.time())+message)
             
     def debug(self, who, *parts):
-        if self.Debug:
-            self.log(who, *parts, stream="debug")
+        if self.Debug.get(who):
+            self.log(who, *parts, channel="debug")
 
     def error(self, who, *parts):
-        self.log(who, *parts, stream="error")
+        self.log(who, *parts, channel="error")
 
     def log_request(self, who, *parts):
-        self.log(who, *parts, stream="requests")
+        self.log(who, *parts, channel="requests")
 
 
-class MultiServerSubprocess(Process):
+class MultiServerSubprocess(Process, Logged):
     
     def __init__(self, port, sock, config_file, logger=None):
         Process.__init__(self, daemon=True)
@@ -386,11 +383,8 @@ class MultiServerSubprocess(Process):
         self.MasterSide = True
         self.Stop = False
         self.MasterPID = os.getpid()
+        Logged.__init__(self, f"[Subprocess {self.MasterPID}]", logger=logger)
         
-    def log(self, *parts):
-        mypid=os.getpid()
-        self.Logger.log(f"[Subprocess {mypid}]", *parts)
-
     def reconfigure(self):
         #print("MultiServerSubprocess.reconfigure()...")
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
@@ -476,9 +470,9 @@ class MultiServerSubprocess(Process):
             
 class MPMultiServer(PyThread, Logged):
             
-    def __init__(self, config_file, logger=None, debug=False):
+    def __init__(self, config_file):
         PyThread.__init__(self)
-        Logged.__init__(self, "[Multiserver]", logger, debug=debug)
+        Logged.__init__(self, "[Multiserver]")
         self.ConfigFile = config_file
         self.Server = None
         self.Port = None
@@ -487,10 +481,8 @@ class MPMultiServer(PyThread, Logged):
         self.Sock = None
         self.Stop = False
         self.MPLogger = None
-        if logger is not None:
-            self.MPLogger = MPLogger(logger, debug=debug)
-            self.MPLogger.start()
-        self.Debug = debug
+        self.MPLogger = MPLogger(config_file)
+        self.MPLogger.start()
         self.reconfigure()
 
     @synchronized
@@ -592,15 +584,15 @@ def main():
         sys.exit(2)
     config_file = sys.argv[1]
     config = expand(yaml.load(open(config_file, 'r'), Loader=yaml.SafeLoader))
-    logger = None
+    master_logger = None
     if "logger" in config:
         cfg = config["logger"]
         debug = cfg.get("debug", False)
-        if cfg.get("enabled", True):
-            logger = Logger(cfg.get("file", "-"), debug=debug)
+        from webpie.logs import init
+        init(cfg.get("file", "-"), debug_enabled=debug)
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
-    ms = MPMultiServer(config_file, logger, debug)
+    ms = MPMultiServer(config_file)
     signal.signal(signal.SIGHUP, ms.reconfigure)
     #signal.signal(signal.SIGCHLD, ms.child_died)
     signal.signal(signal.SIGINT, ms.killme)

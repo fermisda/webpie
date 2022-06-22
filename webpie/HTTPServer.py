@@ -588,7 +588,7 @@ class HTTPServer(PyThread, Logged):
                 #print(exc)
                 if not self.Stop:
                     self.debug("connection processing error: %s" % (traceback.format_exc(),))
-                    self.log_error(caddr, "Error processing connection: %s" % (exc,))
+                    self.error(caddr, "Error processing connection: %s" % (exc,))
                     if csock is not None:
                         try:    csock.close()
                         except: pass
