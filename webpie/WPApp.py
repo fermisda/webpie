@@ -669,8 +669,6 @@ class WPApp(object):
             self.init()
             self.Initialized = True
 
-            self.init()
-
         root_handler = self.RootHandler or self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
         #print("root_handler:", root_handler)
             
