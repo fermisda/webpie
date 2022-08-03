@@ -1,51 +1,64 @@
 import traceback, sys, time
+from datetime import datetime
 from .log_file import LogFile, LogStream
 
 DefaultLogger = None
 
-class StreamLogger(object):
+class LogChannel(object):
+    
+    def __init__(self, output, label=None, enabled=True, timestamps=True):
+        self.Timestamps = timestamps
+        self.Output = LogFile(output) if isinstance(output, str) else (
+            LogStream(output) if output in (sys.stdout, sys.stderr)
+            else output
+        )            # Either LogFile or LogStream or path or stdout or stderr
+        self.Label = label
+        self.Enabled = enabled
+        
+    def enable(self, enabled=True):
+        self.Enabled = enabled
 
-    def log_to_stream(self, stream, *message, sep=" ", who=None):
-        raise NotImplementedError()
+    def log(self, who, *message, sep=" ", t=None, label=None):
+        #print("LogChannel.log(): who:", who)
+        if self.Enabled:
+            message = sep.join([str(p) for p in message])
+            label = label or self.Label
+            if label is not None:
+                message = f"[{label}] {message}"
+            if who:
+                message = f"{who}: {message}"
+            if not self.Timestamps: t = False
+            self.Output.log(message, t=t)
 
 
 class AbstractLogger(object):
 
-    def log(self, *message, sep=" ", who=None):
-        raise NotImplementedError()
-
-    def error(self, who, *message, sep=" "):
-        raise NotImplementedError()
-
-    def debug(self, who, *message, sep=" "):
+    def log(self, *message, sep=" ", who=None, t=None, channel="log"):
         raise NotImplementedError()
 
 
-class Logger(StreamLogger):
+class Logger(AbstractLogger):
 
-    def __init__(self, log_path, error_path=None, debug_path=None, debug=False, **streams):
-        log_out = self.make_log(log_path, sys.stdout)
-        self.Streams = {
-            "log":      log_out,
-            "error":    log_out if error_path is None else self.make_log(error_path, sys.stderr),
-            "debug":    log_out if debug_path is None else self.make_log(debug_path, sys.stderr)
-        }
-
-        for name, path in streams.items():
-            self.Streams[name] = log_out if path is None else self.make_log(path, sys.stdout)
-            print(f"custom stream {name} added")
+    def __init__(self, log_path, error_path=None, debug_path=None, debug=True, append=True):
         self.Debug = debug
+        log_output = self.make_output(log_path, sys.stdout, append=append)
+        
+        # default channels
+        self.Channels = {       
+            "log":      LogChannel(log_output),
+            "error":    LogChannel(log_output if error_path is None else self.make_output(error_path, sys.stderr, append=append), label="ERROR")
+        }
+        if debug:
+            self.Channels["debug"] = LogChannel(log_output if debug_path is None else self.make_output(debug_path, sys.stderr, append=append), label="DEBUG")
 
-    def add_stream(self, name, path=None):
-        out = self.Streams["log"]
-        self.Streams[name] = out if path is None else self.make_log(path, sys.stdout)
+    def add_channel(self, name, path=None, print_label=False, timestamps=True, **params):
+        log_out = self.Channels["log"].Output
+        self.Channels[name] = LogChannel(log_out if path is None else self.make_output(path, sys.stdout, **params), 
+                label = name if print_label else None,
+                timestamps = timestamps
+        )
 
-    def log_to_stream(self, stream, *message, sep=" ", who=None):
-        assert who is not None, "Message originator (who) must be specified"
-        print(f"logging to stream {stream}:", message)
-        self.Streams[stream].log("%s: %s" % (who, sep.join([str(p) for p in message])))
-
-    def make_log(self, output, dash_stream, **params):
+    def make_output(self, output, dash_stream, **params):
         if output is None:  
             return None
         elif isinstance(output, (LogFile, LogStream)):
@@ -55,48 +68,53 @@ class Logger(StreamLogger):
         elif output is sys.stderr or output is sys.stdout:
             return LogStream(output)
         else:
-            print("Logger.__init__: output:", output)
+            #print("Logger.__init__: output:", output)
             out = LogFile(output, **params)
             out.start()
             return out
 
-    def log(self, *message, sep=" ", who=None):
+    def log(self, *message, sep=" ", who=None, t=None, channel="log"):
+        #print("Logger.log(", message, sep, who, t, channel, ")")
         assert who is not None, "Message originator (who) must be specified"
-        self.log_to_stream("log", *message, sep=sep, who=who)
+        channel = self.Channels.get(channel)
+        if channel is not None:
+            channel.log(who, *message, sep=sep, t=t)
 
-    def error(self, *message, sep=" ", who=None):
+    def error(self, *message, sep=" ", who=None, t=None):
         assert who is not None, "Message originator (who) must be specified"
-        self.log_to_stream("error", *message, sep=sep, who=f"{who} [ERROR]")
+        self.log(*message, channel="error", sep=sep, who=who, t=t)
 
-    def debug(self, *message, sep=" ", who=None):
+    def debug(self, *message, sep=" ", who=None, t=None):
         assert who is not None, "Message originator (who) must be specified"
         if self.Debug:
-            self.log_to_stream("error", *message, sep=sep, who=f"{who} [DEBUG]")
+            self.log(*message, channel="debug", sep=sep, who=who, t=t)
 
-class Logged(AbstractLogger, StreamLogger):
 
-    def __init__(self, name=None, debug=False, logger=None):
-        assert logger is None or isinstance(logger, StreamLogger), "logger must be either None or a Logger or a Logged"
+class Logged(AbstractLogger):
+
+    def __init__(self, name=None, debug=True, logger=None):
+        assert logger is None or isinstance(logger, AbstractLogger), "logger must be either None or a Logger or a Logged"
         self.Logger = logger
         self.LogName = name or self.__class__.__name__
         self.Debug = debug
-        print("Logged: LogName=", self.LogName)
+        #print("Logged: LogName=", self.LogName)
 
-    def log_to_stream(self, stream, *message, sep=" ", who=None):
+    def log(self, *message, sep=" ", who=None, t=None, channel="log"):
+        #print("Logged.log(", message, sep, who, t, channel, ")")
+        who = who or self.LogName
         logger = self.Logger or DefaultLogger
-        logger.log_to_stream(stream, *message, sep=sep, who=who)
+        if logger is not None and (channel != "debug" or self.Debug):
+           logger.log(*message, sep=sep, who=who, t=t, channel=channel)
     
-    def log(self, *message, sep=" ", who=None, stream="log"):
-        self.log_to_stream(stream, *message, sep=sep, who=who or self.LogName)
+    def error(self, *message, sep=" ", who=None, t=None):
+        self.log(*message, sep=sep, who=who or self.LogName, t=t, channel="error")
 
-    def error(self, *message, sep=" ", who=None):
-        self.log_to_stream("error", *message, sep=sep, who=who or self.LogName)
+    def debug(self, *message, sep=" ", who=None, t=None):
+        self.log(*message, sep=sep, who=who or self.LogName, t=t, channel="debug")
 
-    def debug(self, *message, sep=" ", who=None):
-        if self.Debug:
-            self.log_to_stream("debug", *message, sep=sep, who=who or self.LogName)
 
 def init(log_output, error_out=None, debug_out=None, debug_enabled=False):
     global DefaultLogger
     DefaultLogger = Logger(log_output, error_out, debug_out, debug_enabled)
+    return DefaultLogger
     
