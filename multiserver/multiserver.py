@@ -2,7 +2,7 @@ import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
-from logs import Logger, Logged, AbstractLogger
+from webpie.logs import Logger, Logged, AbstractLogger
 
 import re, socket
 
