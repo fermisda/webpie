@@ -1,6 +1,7 @@
 from .webob import Response
 from .webob import Request as webob_request
 from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound
+from . import Version as WebPieVersion
     
 import os.path, os, stat, sys, traceback, fnmatch, datetime, inspect, json
 from threading import RLock
@@ -350,7 +351,7 @@ class WPHandler:
         return self.Request.environ.get('SCRIPT_NAME',
                 os.environ.get('SCRIPT_NAME', '')
         )
-        
+
     def uriDir(self, ignored=None):
         return os.path.dirname(self.scriptUri())
         
@@ -446,7 +447,6 @@ class WPApp(object):
     Version = "Undefined"
 
     def __init__(self, root_class_or_handler, strict=False, 
-            static_path="/static", static_location=None, enable_static=False,
             prefix=None, replace_prefix="",
             environ={}):
 
@@ -641,6 +641,19 @@ class WPApp(object):
             root_handler._destroy()
         return out
 
+    def scriptUri(self, request):
+        return request.environ.get('SCRIPT_NAME', os.environ.get('SCRIPT_NAME', ''))
+
+    def url_origin(self, request):
+        # returns the origin of the URL where the portion of the URL, parsed by the App, begins
+        # can be used to include absolute URL in the output HTML
+        origin = '/' + (self.scriptUri(request) or "/") + (self.Prefix or "/")
+        while '//' in origin:
+            origin = origin.replace('//', '/')
+        while origin and origin.endswith('/'):
+            origin = origin[:-1]
+        return origin or '/'
+
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
@@ -649,6 +662,9 @@ class WPApp(object):
         environ.update(self.Environ)
         #print 'path:', path_down
 
+        environ["WebPie.path_prefix"] = self.Prefix or ""
+        environ["WebPie.path_replace_prefix"] = self.ReplacePrefix or None
+        environ["WebPie.version"] = WebPieVersion
 
         path = self.convertPath(path)
         if path is None:
@@ -661,15 +677,13 @@ class WPApp(object):
         environ["PATH_INFO"] = path
 
         req = Request(environ)
-        if not self.Initialized:
-            self.ScriptName = environ.get('SCRIPT_NAME') or ''
-            self.Script = environ.get('SCRIPT_FILENAME') or \
-                        os.environ.get('UWSGI_SCRIPT_FILENAME')
-            self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
-            self.init()
-            self.Initialized = True
-
-            self.init()
+        with self:
+            if not self.Initialized:
+                self.ScriptName = environ.get('SCRIPT_NAME') or ''
+                self.Script = environ.get('SCRIPT_FILENAME') or os.environ.get('UWSGI_SCRIPT_FILENAME')
+                self.ScriptHome = os.environ.get('WEBPIE_SCRIPT_HOME') or os.path.dirname(self.Script or sys.argv[0]) or "."
+                self.init()
+                self.Initialized = True
 
         root_handler = self.RootHandler or self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
         #print("root_handler:", root_handler)
