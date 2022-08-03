@@ -249,10 +249,6 @@ class WPHandler:
     def _app_lock(self):
         return self.App._app_lock()
 
-    def initAtPath(self, path):
-        # override me
-        pass
-
     def _checkPermissions(self, x):
         #self.apacheLog("doc: %s" % (x.__doc__,))
         try:    docstr = x.__doc__
@@ -295,7 +291,9 @@ class WPHandler:
         params = {  
             'APP_URL':  self.AppURL,
             'MY_PATH':  self.Path,
-            "GLOBAL_AppTopPath":    self.scriptUri(),
+            "GLOBAL_PathPrefix":    self.App.Prefix or "",
+            "GLOBAL_ReplacePathPrefix": self.App.ReplacePrefix or "",
+            "GLOBAL_AppTopPath":    self.appTopPath(),
             "GLOBAL_AppDirPath":    self.uriDir(),
             "GLOBAL_ImagesPath":    self.uriDir()+"/images",
             "GLOBAL_AppVersion":    self.App.Version,
@@ -346,15 +344,28 @@ class WPHandler:
     def getSessionData(self):
         return self.App.getSessionData()
         
-        
+    def canonic_path(self, path):
+        # removes all occurances of '//'
+        # if the path was absoulute, it remains absoulte (starts with '/')
+        # makes sure the path does not end with '/' unless it is the root path "/"
+        while path and '//' in path:
+            path = path.replace('//', '/')
+        if path and path != '/' and path.endswith('/'):
+            path = path[:-1]
+        return path
+    
     def scriptUri(self, ignored=None):
-        return self.Request.environ.get('SCRIPT_NAME',
-                os.environ.get('SCRIPT_NAME', '')
-        )
+        return self.Request.environ.get('SCRIPT_NAME', os.environ.get('SCRIPT_NAME', ''))
 
     def uriDir(self, ignored=None):
         return os.path.dirname(self.scriptUri())
-        
+
+    def appTopPath(self):
+        # combines SCRIPT_NAME, which comes from the HTTP Server, with App prefix
+        # makes sure the result is absolute path (starts with '/')
+        # should be used to build absolute URL path to be used by the client to address specific relative URIs        
+        return self.canonic_path('/' + self.scriptUri() + '/' + (self.App.Prefix or ""))        # will remove extra slashes
+
     def renderTemplate(self, ignored, template, _dict = {}, **args):
         # backward compatibility method
         params = {}
