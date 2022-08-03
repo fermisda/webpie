@@ -1,24 +1,112 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
-from webpie import Logged, Logger, HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
+from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
+from webpie.logs import Logger, Logged, AbstractLogger
 
 import re, socket
+
+def to_bytes(s):    
+    return s if isinstance(s, bytes) else s.encode("utf-8")
+
+def to_str(b):    
+    return b if isinstance(b, str) else b.decode("utf-8", "ignore")
+
 
 setproctitle = None
 
 try:    from setproctitle import setproctitle
 except: pass
 
+def services_from_config(config):
+    templates = config.get("templates", {})
+    services = config.get("services", [])
+    
+    service_list = []
+    assert isinstance(services, list)
+    for svc_cfg in services:
+        #print("svc_cfg:", svc_cfg)
+        svc = None
+        if "template" in svc_cfg:
+            template = templates.get(svc_cfg.get("template", "*"))
+            if template is not None:
+                c = {}
+                c.update(template)
+                c.update(svc_cfg)
+                svc_cfg = expand(c)
+            names = svc_cfg.get("names", [svc_cfg.get("name")])
+            for name in names:
+                c = svc_cfg.copy()
+                c["name"] = name
+                yield c
+        else:
+            yield svc_cfg
 
-RequestTask = RequestProcessor
+class RequestTask(Task, Logged):
+    
+    def __init__(self, wsgi_app, request, logger):
+        Task.__init__(self, name=f"[RequestTask {request.Id}]")
+        Logged.__init__(self, f"[RequestTask {request.Id}]", logger=logger)
+        #print("RequestTask: wsgi_app:", wsgi_app)
+        self.WSGIApp = wsgi_app
+        self.Request = request
+        self.OutBuffer = ""
+        self.ResponseStatus = None
+        self.ByteCount = 0
+        self.Error = None
 
-#class RequestTask(RequestProcessor, Task):
-#    
-#    def __init__(self, wsgi_app, request, logger):
-#        #print("RequestTask.__init__: args:", wsgi_app, request, logger)
-#        Task.__init__(self, name=f"[RequestTask {request.Id}]")
-#        RequestProcessor.__init__(self, wsgi_app, request, logger)
+    def run(self):       
+        request = self.Request
+        try:
+            env = request.wsgi_env() 
+            header = request.HTTPHeader
+            csock = request.CSock
+
+            if env["WebPie.headers"].get("Expect") == "100-continue":
+                csock.sendall(b'HTTP/1.1 100 Continue\n\n')
+                    
+            out = []
+            
+            try:
+                #print("env:")
+                #for k, v in env.items():
+                #    print(k,":",v)
+                out = self.WSGIApp(env, self.start_response)    
+            except:
+                error = "error in wsgi_app: %s" % (traceback.format_exc(),)
+                csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
+                return self.error(error)
+            
+            if self.OutBuffer:      # from start_response
+                csock.sendall(to_bytes(self.OutBuffer))
+                
+            byte_count = 0
+
+            for line in out:
+                line = to_bytes(line)
+                try:    csock.sendall(line)
+                except Exception as e:
+                    return self.error("error sending body: %s" % (e,))
+                self.ByteCount += len(line)
+        finally:
+            request.close()
+            self.OutBuffer = None
+            self.WSGIApp = None
+
+    def error(self, error):
+        self.Error = error
+
+    def start_response(self, status, headers):
+        self.debug("start_response(%s)" % (status,))
+        self.ResponseStatus = status.split()[0]
+        out = ["HTTP/1.1 " + status]
+        for h,v in headers:
+            if h != "Connection":
+                out.append("%s: %s" % (h, v))
+        out.append("Connection: close")     # can not handle keep-alive
+        out.append(f"X-WebPie-Request-Id: {self.Request.Id}")
+        self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
+
 
 class Service(Primitive, Logged):
     
@@ -26,10 +114,16 @@ class Service(Primitive, Logged):
         name = config["name"]
         #print("Service(): config:", config)
         self.ServiceName = name
+        self.Logger = logger
+        Logged.__init__(self, name, logger=logger)
+        self.Debug = config.get("debug", False)
         Primitive.__init__(self, name=f"[service {name}]")        
-        Logged.__init__(self, f"[app {name}]", logger, debug=True)
         self.Config = None
         self.Initialized = self.initialize(config)
+
+    def log_request(self, *message):
+        if self.Logger is not None:
+            self.Logger.log(*message, channel="requests")
 
     @synchronized
     def initialize(self, config=None):
@@ -68,7 +162,7 @@ class Service(Primitive, Logged):
             try:    exec(open(fname, "r").read(), g)
             except:
                 tb = traceback.format_exc()
-                self.log_error(f"Error importing module {fname}:\n{tb}")
+                self.error(f"Error importing module {fname}:\n{tb}")
                 return False
                 
             if "create" in config:
@@ -82,7 +176,7 @@ class Service(Primitive, Logged):
                 fcn_name = application[:-2]
                 fcn = g.get(fcn_name)
                 if fcn is None:
-                    self.log_error(f"Application creation function {fcn_name} not found in module {fname}")
+                    self.error(f"Application creation function {fcn_name} not found in module {fname}")
                     return False
                 
                 try:    
@@ -96,17 +190,17 @@ class Service(Primitive, Logged):
                         app = fcn(args)
                 except:
                     tb = traceback.format_exc()
-                    self.log_error(f"Error calling the application initialization function:\n{tb}")
+                    self.error(f"Error calling the application initialization function:\n{tb}")
                     return False
                     
                 if app is None:
-                    self.log_error(f'Application creation function {fcn_name} returned None')
+                    self.error(f'Application creation function {fcn_name} returned None')
                     return False
 
             else:
                 app = g.get(application)
                 if app is None:
-                    self.log_error(f'Application object "{application}" not found in {fname}')
+                    self.error(f'Application object "{application}" not found in {fname}')
                     return False
                     
             
@@ -121,7 +215,7 @@ class Service(Primitive, Logged):
             
         except:
             tb = traceback.format_exc()
-            self.log_error(f"Error initializing application:\n{tb}")
+            self.error(f"Error initializing application:\n{tb}")
             return False
             
 
@@ -138,11 +232,22 @@ class Service(Primitive, Logged):
         return True
             
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
-        self.log_error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
+        self.error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
         try:
             task.Request.close()
         except:
             pass
+
+    def taskEnded(self, queue, task, result):
+        request = task.Request
+        header = request.HTTPHeader
+        log_line = '%s:%s :%s %s %s -> [%s] %s %s %s' % (   
+                        request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                        header.Method, header.OriginalURI, 
+                        self.ServiceName, header.path(),
+                        task.ResponseStatus, task.ByteCount
+                    )
+        self.log(log_line, channel="requests")
 
     def accept(self, request):
         #print(f"Service {self}: accept()")
@@ -192,14 +297,42 @@ class Service(Primitive, Logged):
             return False
         self.Initialized = self.initialize()
 
-class MPLogger(PyThread):
+class MPLogger(PyThread, Logged):
     
-    def __init__(self, logger, queue_size=-1, debug=False, name=None):
+    def __init__(self, config_file, queue_size=-1, name=None):
         import multiprocessing
+        Logged.__init__(self, "MPLogger")
         PyThread.__init__(self, name=name, daemon=True)
-        self.Logger = logger
         self.Queue = multiprocessing.Queue(queue_size)
-        self.Debug = debug
+        self.ConfigFile = config_file
+        self.Loggers = {}           # {"sevice" -> Logger}
+        self.Debug = {}
+        self.reconfigure()
+
+    def reconfigure(self):
+        #
+        # (re-)configure logging 
+        #
+        self.Loggers = {}
+        config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
+        log_config = config.get("logger", {})
+        logs_dir = log_config.get("logs_dir", "logs")
+        if not os.path.isdir(logs_dir):
+            raise ValueError(f"Logs directory {logs_dir} not found")
+        for service_cfg in services_from_config(config):
+            #print("MPLogger: service_cfg:", service_cfg)
+            name = service_cfg["name"]
+            self.Debug[name] = debug = service_cfg.get("debug", False)
+            log_file = service_cfg.get("log", f"{name}.log")
+            if not log_file.startswith('/'):
+                log_file = logs_dir + "/" + log_file
+            requests_file = service_cfg.get("requests", f"{name}.requests")
+            if not requests_file.startswith('/'):
+                requests_file = logs_dir + "/" + requests_file
+            logger = Logger(log_file, debug=debug)
+            logger.add_channel("requests", path=requests_file)
+            self.Loggers[name] = logger
+            #print(f"MPLogger: added logger for service '{name}'")
 
     def run(self):
         #
@@ -208,33 +341,33 @@ class MPLogger(PyThread):
         from queue import Empty
         while True:
             msg = self.Queue.get()
-            who, t = msg[:2]
-            parts = [str(p) for p in msg[2:]]
-            t = datetime.datetime.fromtimestamp(t)
-            process_timestamp = t.strftime("%m/%d/%Y %H:%M:%S") + ".%03d" % (t.microsecond//1000)
-            self.Logger.log(who, "%s: %s" % (process_timestamp, " ".join(parts)))
+            who, channel, t = msg[:3]
+            parts = msg[3:]
+            print("MPLogger: message:", who, channel, t, parts)
+            if who in self.Loggers:
+                self.Loggers[who].log(*parts, who=f"[{who}]", t=t, channel=channel)
+            else:
+                Logged.log(self, *parts, who=who, t=t, channel=channel)
     
-    def log(self, who, *parts):
-        #
-        # subprocess side
-        #
-        parts = tuple(str(p) for p in parts)
-        self.Queue.put((who, time.time())+parts)
+    #
+    # subprocess side
+    #
+    def log(self, *message, sep=" ", who=None, t=None, channel="log"):
+        message = tuple(str(p) for p in message)
+        self.Queue.put((who, channel, time.time())+message)
             
     def debug(self, who, *parts):
-        #
-        # subprocess side
-        #
-        if self.Debug:
-            self.log(f"{who} [DEBUG]", *parts)
+        if self.Debug.get(who):
+            self.log(who, *parts, channel="debug")
 
     def error(self, who, *parts):
-        #
-        # subprocess side
-        #
-        self.log(f"{who} [ERROR]", *parts)
+        self.log(who, *parts, channel="error")
 
-class MultiServerSubprocess(Process):
+    def log_request(self, who, *parts):
+        self.log(who, *parts, channel="requests")
+
+
+class MultiServerSubprocess(Process, Logged):
     
     def __init__(self, port, sock, config_file, logger=None):
         Process.__init__(self, daemon=True)
@@ -250,52 +383,19 @@ class MultiServerSubprocess(Process):
         self.MasterSide = True
         self.Stop = False
         self.MasterPID = os.getpid()
+        Logged.__init__(self, f"[Subprocess {self.MasterPID}]", logger=logger)
         
-    def log(self, *parts):
-        mypid=os.getpid()
-        self.Logger.log(f"[Subprocess {mypid}]", *parts)
-
     def reconfigure(self):
         #print("MultiServerSubprocess.reconfigure()...")
         self.ReconfiguredTime = os.path.getmtime(self.ConfigFile)
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
-        
-        templates = config.get("templates", {})
-        services = config.get("services", [])
-        
         service_list = []
-        assert isinstance(services, list)
-        for svc_cfg in services:
-            #print("svc_cfg:", svc_cfg)
-            svc = None
-            if "template" in svc_cfg:
-                template = templates.get(svc_cfg.get("template", "*"))
-                if template is not None:
-                    c = {}
-                    c.update(template)
-                    c.update(svc_cfg)
-                    svc_cfg = expand(c)
-                names = svc_cfg.get("names", [svc_cfg.get("name")])
-                for name in names:
-                    c = svc_cfg.copy()
-                    c["name"] = name
-                    svc = Service(expand(c), self.Logger)
-                    if svc.Initialized:
-                        service_list.append(svc)
-                        #print("Service", svc, "created and added to the list")
-                    else:
-                        self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
+        for svc_cfg in services_from_config(config):
+            svc = Service(expand(svc_cfg), self.Logger)
+            if svc.Initialized:
+                service_list.append(svc)
             else:
-                #print("MultiServerSubprocess.reconfigure: svc_cfg:", svc_cfg)
-                #print("MultiServerSubprocess.reconfigure: expanded:", expand(svc_cfg))
-                svc = Service(expand(svc_cfg), self.Logger)
-                if not svc.Initialized:
-                    #print("service not initialzed")
-                    self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
-                else:
-                    service_list.append(svc)
-                    #print("Service", svc, "created and added to the list")
-            #print("--------")
+                self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
         names = ",".join(s.Name for s in service_list)
         if self.Server is None:
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
@@ -370,9 +470,9 @@ class MultiServerSubprocess(Process):
             
 class MPMultiServer(PyThread, Logged):
             
-    def __init__(self, config_file, logger=None, debug=False):
+    def __init__(self, config_file):
         PyThread.__init__(self)
-        Logged.__init__(self, "[Multiserver]", logger, debug=debug)
+        Logged.__init__(self, "[Multiserver]")
         self.ConfigFile = config_file
         self.Server = None
         self.Port = None
@@ -381,10 +481,8 @@ class MPMultiServer(PyThread, Logged):
         self.Sock = None
         self.Stop = False
         self.MPLogger = None
-        if logger is not None:
-            self.MPLogger = MPLogger(logger, debug=debug)
-            self.MPLogger.start()
-        self.Debug = debug
+        self.MPLogger = MPLogger(config_file)
+        self.MPLogger.start()
         self.reconfigure()
 
     @synchronized
@@ -486,15 +584,15 @@ def main():
         sys.exit(2)
     config_file = sys.argv[1]
     config = expand(yaml.load(open(config_file, 'r'), Loader=yaml.SafeLoader))
-    logger = None
+    master_logger = None
     if "logger" in config:
         cfg = config["logger"]
         debug = cfg.get("debug", False)
-        if cfg.get("enabled", True):
-            logger = Logger(cfg.get("file", "-"), debug=debug)
+        from webpie.logs import init
+        init(cfg.get("file", "-"), debug_enabled=debug)
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
-    ms = MPMultiServer(config_file, logger, debug)
+    ms = MPMultiServer(config_file)
     signal.signal(signal.SIGHUP, ms.reconfigure)
     #signal.signal(signal.SIGCHLD, ms.child_died)
     signal.signal(signal.SIGINT, ms.killme)

@@ -13,8 +13,7 @@ clean_with_version_defined:
 
 all_with_version_defined:	tarball
 	
-    
-build: $(BUILD_DIR)
+build: $(BUILD_DIR) delete_cached
 	cd webpie; make BUILD_DIR=$(BUILD_DIR) build
 	cd samples; make BUILD_DIR=$(BUILD_DIR) build
 	cd multiserver; make BUILD_DIR=$(BUILD_DIR) build
@@ -27,6 +26,8 @@ tarball: clean build $(TAR_DIR)
 	@echo Tar file $(TAR_FILE) is ready
 	@echo 
 
+delete_cached:
+	find . -type d -name __pycache__ -print | xargs rm -rf
 
 $(BUILD_DIR):
 	mkdir -p $@
