@@ -343,7 +343,7 @@ class MPLogger(PyThread, Logged):
             msg = self.Queue.get()
             who, channel, t = msg[:3]
             parts = msg[3:]
-            print("MPLogger: message:", who, channel, t, parts)
+            #print("MPLogger: message:", who, channel, t, parts)
             if who in self.Loggers:
                 self.Loggers[who].log(*parts, who=f"[{who}]", t=t, channel=channel)
             else:
