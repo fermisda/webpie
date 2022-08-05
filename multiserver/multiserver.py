@@ -211,7 +211,7 @@ class Service(Primitive, Logged):
             queue_capacity = config.get("queue_capacity", 10)
             self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity,
                 delegate=self)
-            self.log("initiaized")
+            self.log("initiaized at prefix:[%s], replace prefix:[%s]" % (self.Prefix or "", self.ReplacePrefix or ""))
             
         except:
             tb = traceback.format_exc()

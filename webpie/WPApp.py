@@ -117,6 +117,17 @@ class HTTPResponseException(Exception):
     def __init__(self, response):
         self.value = response
 
+def canonic_path(path):
+    # removes all occurances of '//'
+    # if the path was absoulute, it remains absoulte (starts with '/')
+    # makes sure the path does not end with '/' unless it is the root path "/"
+    while path and '//' in path:
+        path = path.replace('//', '/')
+    if path and path != '/' and path.endswith('/'):
+        path = path[:-1]
+    return path
+
+
 def makeResponse(resp):
     #
     # acceptable responses:
@@ -293,7 +304,8 @@ class WPHandler:
             'MY_PATH':  self.Path,
             "GLOBAL_PathPrefix":    self.App.Prefix or "",
             "GLOBAL_ReplacePathPrefix": self.App.ReplacePrefix or "",
-            "GLOBAL_AppTopPath":    self.appTopPath(),
+            "GLOBAL_AppRootPath":   self.appRootPath(),
+            "GLOBAL_AppTopPath":    self.appTopPath(),  # for backward compatibility
             "GLOBAL_AppDirPath":    self.uriDir(),
             "GLOBAL_ImagesPath":    self.uriDir()+"/images",
             "GLOBAL_AppVersion":    self.App.Version,
@@ -343,16 +355,6 @@ class WPHandler:
         
     def getSessionData(self):
         return self.App.getSessionData()
-        
-    def canonic_path(self, path):
-        # removes all occurances of '//'
-        # if the path was absoulute, it remains absoulte (starts with '/')
-        # makes sure the path does not end with '/' unless it is the root path "/"
-        while path and '//' in path:
-            path = path.replace('//', '/')
-        if path and path != '/' and path.endswith('/'):
-            path = path[:-1]
-        return path
     
     def scriptUri(self, ignored=None):
         return self.Request.environ.get('SCRIPT_NAME', os.environ.get('SCRIPT_NAME', ''))
@@ -360,11 +362,10 @@ class WPHandler:
     def uriDir(self, ignored=None):
         return os.path.dirname(self.scriptUri())
 
-    def appTopPath(self):
-        # combines SCRIPT_NAME, which comes from the HTTP Server, with App prefix
-        # makes sure the result is absolute path (starts with '/')
-        # should be used to build absolute URL path to be used by the client to address specific relative URIs        
-        return self.canonic_path('/' + self.scriptUri() + '/' + (self.App.Prefix or ""))        # will remove extra slashes
+    def appRootPath(self):
+        return self.App.appRootPath(self.Request.environ)
+        
+    appTopPath = appRootPath            # synonym for backward compatibility
 
     def renderTemplate(self, ignored, template, _dict = {}, **args):
         # backward compatibility method
@@ -548,7 +549,7 @@ class WPApp(object):
             #print(f"converted to: [{path}]")
                 
         return path
-                
+        
     def handler_options(self, *params, **args):
         self.HandlerParams = params
         self.HandlerArgs = args
@@ -652,18 +653,14 @@ class WPApp(object):
             root_handler._destroy()
         return out
 
-    def scriptUri(self, request):
-        return request.environ.get('SCRIPT_NAME', os.environ.get('SCRIPT_NAME', ''))
-
-    def url_origin(self, request):
-        # returns the origin of the URL where the portion of the URL, parsed by the App, begins
-        # can be used to include absolute URL in the output HTML
-        origin = '/' + (self.scriptUri(request) or "/") + (self.Prefix or "/")
-        while '//' in origin:
-            origin = origin.replace('//', '/')
-        while origin and origin.endswith('/'):
-            origin = origin[:-1]
-        return origin or '/'
+    def scriptUri(self, environ):
+        return environ.get('SCRIPT_NAME') or os.environ.get('SCRIPT_NAME', '')
+        
+    def appRootPath(self, environ):
+        # combines SCRIPT_NAME, which comes from the HTTP Server, with App prefix
+        # makes sure the result is absolute path (starts with '/')
+        # should be used to build absolute URL path to be used by the client to address specific relative URIs        
+        return canonic_path('/' + self.scriptUri(environ) + '/' + (self.Prefix or ""))        # will remove extra slashes        
 
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
@@ -673,9 +670,10 @@ class WPApp(object):
         environ.update(self.Environ)
         #print 'path:', path_down
 
-        environ["WebPie.path_prefix"] = self.Prefix or ""
-        environ["WebPie.path_replace_prefix"] = self.ReplacePrefix or None
         environ["WebPie.version"] = WebPieVersion
+        environ["WebPie.path_prefix"] = self.Prefix or ""
+        environ["WebPie.app_root_path"] = self.appRootPath(environ)
+        environ["WebPie.path_replace_prefix"] = self.ReplacePrefix or None
 
         path = self.convertPath(path)
         if path is None:
