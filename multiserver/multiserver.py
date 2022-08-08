@@ -2,7 +2,7 @@ import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
-from webpie.logs import Logger, Logged, AbstractLogger
+from webpie.logs import Logger, Logged
 
 import re, socket
 
@@ -41,72 +41,9 @@ def services_from_config(config):
                 yield c
         else:
             yield svc_cfg
-
-class RequestTask(Task, Logged):
-    
-    def __init__(self, wsgi_app, request, logger):
-        Task.__init__(self, name=f"[RequestTask {request.Id}]")
-        Logged.__init__(self, f"[RequestTask {request.Id}]", logger=logger)
-        #print("RequestTask: wsgi_app:", wsgi_app)
-        self.WSGIApp = wsgi_app
-        self.Request = request
-        self.OutBuffer = ""
-        self.ResponseStatus = None
-        self.ByteCount = 0
-        self.Error = None
-
-    def run(self):       
-        request = self.Request
-        try:
-            env = request.wsgi_env() 
-            header = request.HTTPHeader
-            csock = request.CSock
-
-            if env["WebPie.headers"].get("Expect") == "100-continue":
-                csock.sendall(b'HTTP/1.1 100 Continue\n\n')
-                    
-            out = []
             
-            try:
-                #print("env:")
-                #for k, v in env.items():
-                #    print(k,":",v)
-                out = self.WSGIApp(env, self.start_response)    
-            except:
-                error = "error in wsgi_app: %s" % (traceback.format_exc(),)
-                csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
-                return self.error(error)
-            
-            if self.OutBuffer:      # from start_response
-                csock.sendall(to_bytes(self.OutBuffer))
-                
-            byte_count = 0
-
-            for line in out:
-                line = to_bytes(line)
-                try:    csock.sendall(line)
-                except Exception as e:
-                    return self.error("error sending body: %s" % (e,))
-                self.ByteCount += len(line)
-        finally:
-            request.close()
-            self.OutBuffer = None
-            self.WSGIApp = None
-
-    def error(self, error):
-        self.Error = error
-
-    def start_response(self, status, headers):
-        self.debug("start_response(%s)" % (status,))
-        self.ResponseStatus = status.split()[0]
-        out = ["HTTP/1.1 " + status]
-        for h,v in headers:
-            if h != "Connection":
-                out.append("%s: %s" % (h, v))
-        out.append("Connection: close")     # can not handle keep-alive
-        out.append(f"X-WebPie-Request-Id: {self.Request.Id}")
-        self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
-
+class RequestTask(RequestProcessor):
+    pass
 
 class Service(Primitive, Logged):
     
@@ -114,9 +51,7 @@ class Service(Primitive, Logged):
         name = config["name"]
         #print("Service(): config:", config)
         self.ServiceName = name
-        self.Logger = logger
-        Logged.__init__(self, name, logger=logger)
-        self.Debug = config.get("debug", False)
+        Logged.__init__(self, name, logger=logger, debug=config.get("debug", False))
         Primitive.__init__(self, name=f"[service {name}]")        
         self.Config = None
         self.Initialized = self.initialize(config)
@@ -234,20 +169,25 @@ class Service(Primitive, Logged):
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
         self.error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
         try:
+            # make sure the request is closed
             task.Request.close()
         except:
             pass
 
-    def taskEnded(self, queue, task, result):
+    def taskEnded(self, queue, task, _):
         request = task.Request
         header = request.HTTPHeader
-        log_line = '%s:%s :%s %s %s -> [%s] %s %s %s' % (   
+        error = "" if not task.Error else " [%s]" % (task.Error,)
+        log_line = '%s %s:%s :%s %s %s -> [%s] %s %s %s%s' % (
+                        request.Id,
                         request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
                         self.ServiceName, header.path(),
-                        task.ResponseStatus, task.ByteCount
+                        task.ResponseStatus, task.ByteCount, error
                     )
         self.log(log_line, channel="requests")
+        if task.Traceback:
+            self.error(request.Id, task.Traceback)
 
     def accept(self, request):
         #print(f"Service {self}: accept()")
@@ -269,7 +209,7 @@ class Service(Primitive, Logged):
                 script_path = script_path[:-1]
             request.Environ["SCRIPT_NAME"] = script_path
             request.Environ["SCRIPT_FILENAME"] = self.ScriptFileName
-            self.RequestQueue.addTask(RequestTask(self.WSGIApp, request, self.Logger))
+            self.RequestQueue.addTask(RequestTask(self.WSGIApp, request))
             #print("Service", self, "   accepted")
             return True
         else:

@@ -202,9 +202,10 @@ class RequestProcessor(Task):
         self.WSGIApp = wsgi_app
         self.Request = request
         self.OutBuffer = ""
-        self.StatusCode = None
+        self.ResponseStatus = None
         self.ByteCount = 0
         self.Error = None
+        self.Traceback = None
 
     def run(self):       
         request = self.Request
@@ -214,7 +215,10 @@ class RequestProcessor(Task):
             csock = request.CSock
 
             if env["WebPie.headers"].get("Expect") == "100-continue":
-                csock.sendall(b'HTTP/1.1 100 Continue\n\n')
+                try:    csock.sendall(b'HTTP/1.1 100 Continue\n\n')
+                except Exception as e:
+                    self.Error = "exception sending 100 Continue: %s" % (e,)
+                    return
                     
             out = []
             
@@ -222,34 +226,37 @@ class RequestProcessor(Task):
                 #print("env:")
                 #for k, v in env.items():
                 #    print(k,":",v)
+                env["WebPie.socket"] = csock
                 out = self.WSGIApp(env, self.start_response)    
-            except:
-                error = "error in wsgi_app: %s" % (traceback.format_exc(),)
-                csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
-                return self.error(error)
+            except Exception as e:
+                self.Traceback = error = "exception in WSGI app: %s" % (traceback.format_exc(),)
+                self.Error = "exception in app: %s" % (e,)
+                try:    csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
+                except: pass        # can not do anything anyway
+                return
             
             if self.OutBuffer:      # from start_response
-                csock.sendall(to_bytes(self.OutBuffer))
+                try:    csock.sendall(to_bytes(self.OutBuffer))
+                except Exception as e:
+                    self.Error = "exception sending body (out_buffer): %s" % (e,)
+                    return
                 
-            self.ByteCount = 0
+            byte_count = 0
 
             for line in out:
                 line = to_bytes(line)
                 try:    csock.sendall(line)
                 except Exception as e:
-                    return self.error("error sending body: %s" % (e,))
+                    self.Error = "error sending body: %s" % (e,)
+                    return 
                 self.ByteCount += len(line)
         finally:
             request.close()
             self.OutBuffer = None
             self.WSGIApp = None
-        return request
-
-    def error(self, error):
-        self.Error = error
 
     def start_response(self, status, headers):
-        self.StatusCode = int(status.split(None, 1)[0])
+        self.ResponseStatus = status.split()[0]
         out = ["HTTP/1.1 " + status]
         for h,v in headers:
             if h != "Connection":
@@ -257,6 +264,7 @@ class RequestProcessor(Task):
         out.append("Connection: close")     # can not handle keep-alive
         out.append(f"X-WebPie-Request-Id: {self.Request.Id}")
         self.OutBuffer = "\r\n".join(out) + "\r\n\r\n"
+
 
 class Service(Logged):
     
@@ -275,19 +283,24 @@ class Service(Logged):
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
         self.error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
         try:
+            # make sure the request is closed
             task.Request.close()
         except:
             pass
 
-    def taskEnded(self, queue, task, request):
+    def taskEnded(self, queue, task, _):
+        request = task.Request
         header = request.HTTPHeader
-        log_line = '%s:%s :%s %s %s -> %s %s %s %s' % (   
-                        request.CAddr[0], request.CAddr[1], request.ServerPort, 
+        error = "" if not task.Error else " [%s]" % (task.Error,)
+        log_line = '%s %s:%s :%s %s %s -> %s %s %s %s%s' % (   
+                        request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
                         request.AppName, header.path(),
-                        task.StatusCode, task.ByteCount
+                        task.ResponseStatus, task.ByteCount, error
                     )
         self.log(log_line)
+        if task.Traceback:
+            self.error(request.Id, task.Traceback)
 
 
 class Request(object):
