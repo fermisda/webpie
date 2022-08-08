@@ -288,15 +288,23 @@ class Service(Logged):
         except:
             pass
 
+    def interval(self, x, y):
+        if x is None or y is None:
+            return 0.0
+        else:
+            return x - y
+
     def taskEnded(self, queue, task, _):
         request = task.Request
         header = request.HTTPHeader
         error = "" if not task.Error else " [%s]" % (task.Error,)
-        log_line = '%s %s:%s :%s %s %s -> %s %s %s %s%s' % (   
+        start_time = self.interval(task.Started, task.Created)
+        processing_time = self.interval(task.Ended, task.Started)
+        log_line = '%s %s:%s :%s %s %s -> %s %s %s %s w:%.3f r:%.3f%s' % (   
                         request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
                         request.AppName, header.path(),
-                        task.ResponseStatus, task.ByteCount, error
+                        task.ResponseStatus, task.ByteCount, start_time, processing_time, error
                     )
         self.log(log_line)
         if task.Traceback:

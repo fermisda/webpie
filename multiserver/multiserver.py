@@ -146,7 +146,7 @@ class Service(Primitive, Logged):
             queue_capacity = config.get("queue_capacity", 10)
             self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity,
                 delegate=self)
-            self.log("initiaized at prefix:[%s], replace prefix:[%s]" % (self.Prefix or "", self.ReplacePrefix or ""))
+            self.log("service initialized at prefix:[%s], replace prefix:[%s]" % (self.Prefix or "", self.ReplacePrefix or ""))
             
         except:
             tb = traceback.format_exc()
@@ -174,18 +174,26 @@ class Service(Primitive, Logged):
         except:
             pass
 
+    def interval(self, x, y):
+        if x is None or y is None:
+            return 0.0
+        else:
+            return x - y
+
     def taskEnded(self, queue, task, _):
         request = task.Request
         header = request.HTTPHeader
         error = "" if not task.Error else " [%s]" % (task.Error,)
-        log_line = '%s %s:%s :%s %s %s -> [%s] %s %s %s%s' % (
-                        request.Id,
-                        request.CAddr[0], request.CAddr[1], request.ServerPort, 
+        start_time = self.interval(task.Started, task.Created)
+        processing_time = self.interval(task.Ended, task.Started)
+        log_line = '%s %s:%s :%s %s %s -> %s %s %s %s w:%.3f r:%.3f%s' % (   
+                        request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
-                        self.ServiceName, header.path(),
-                        task.ResponseStatus, task.ByteCount, error
+                        request.AppName, header.path(),
+                        task.ResponseStatus, task.ByteCount, start_time, processing_time, error
                     )
         self.log(log_line, channel="requests")
+        #print("Service.taskEnded: task.Traceback:", task.Traceback)
         if task.Traceback:
             self.error(request.Id, task.Traceback)
 
@@ -236,13 +244,13 @@ class Service(Primitive, Logged):
         else:
             return False
         self.Initialized = self.initialize()
-
+        
 class MPLogger(PyThread, Logged):
     
     def __init__(self, config_file, queue_size=-1, name=None):
         import multiprocessing
         Logged.__init__(self, "MPLogger")
-        PyThread.__init__(self, name=name, daemon=True)
+        PyThread.__init__(self, name="MPLogger", daemon=True)
         self.Queue = multiprocessing.Queue(queue_size)
         self.ConfigFile = config_file
         self.Loggers = {}           # {"sevice" -> Logger}
@@ -275,19 +283,18 @@ class MPLogger(PyThread, Logged):
             #print(f"MPLogger: added logger for service '{name}'")
 
     def run(self):
-        #
-        # master side
-        #
-        from queue import Empty
         while True:
-            msg = self.Queue.get()
-            who, channel, t = msg[:3]
-            parts = msg[3:]
-            #print("MPLogger: message:", who, channel, t, parts)
-            if who in self.Loggers:
-                self.Loggers[who].log(*parts, who=f"[{who}]", t=t, channel=channel)
-            else:
-                Logged.log(self, *parts, who=who, t=t, channel=channel)
+            self.process_message()
+    
+    def process_message(self):
+        msg = self.Queue.get()
+        who, channel, t = msg[:3]
+        parts = msg[3:]
+        #print("MPLogger: message:", who, channel, t, parts)
+        if who in self.Loggers:
+            self.Loggers[who].log(*parts, who=f"[{who}]", t=t, channel=channel)
+        else:
+            Logged.log(self, *parts, who=who, t=t, channel=channel)
     
     #
     # subprocess side
@@ -324,6 +331,8 @@ class MultiServerSubprocess(Process, Logged):
         self.Stop = False
         self.MasterPID = os.getpid()
         Logged.__init__(self, f"[Subprocess {self.MasterPID}]", logger=logger)
+        #for key, value in sorted(self.__dict__.items()):
+        #    print(key, type(value), value)
         
     def reconfigure(self):
         #print("MultiServerSubprocess.reconfigure()...")
@@ -420,7 +429,6 @@ class MPMultiServer(PyThread, Logged):
         self.Subprocesses = []
         self.Sock = None
         self.Stop = False
-        self.MPLogger = None
         self.MPLogger = MPLogger(config_file)
         self.MPLogger.start()
         self.reconfigure()
@@ -519,6 +527,8 @@ class   SignalHandler:
             traceback.print_exc()
             
 def main():
+    import multiprocessing
+    multiprocessing.set_start_method('fork')
     if not sys.argv[1:] or sys.argv[1] in ("-?", "-h", "--help", "help"):
         print(Usage)
         sys.exit(2)

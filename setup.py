@@ -25,7 +25,7 @@ setup(
     url = "https://webpie.github.io/",
     packages=['webpie', 'samples', 'webpie/webob', 'router', 'multiserver'],
     long_description=read('README.rst'),
-    install_requires=["pythreader"],
+    install_requires=["pythreader>=2.8.2"],
     zip_safe = False,
     classifiers=[
         "Operating System :: POSIX",
