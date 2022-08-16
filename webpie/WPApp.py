@@ -203,7 +203,7 @@ def makeResponse(resp):
     #print(response)
     return response
 
-class WPHandler:
+class WPHandler(object):
 
     Version = ""
     
@@ -458,9 +458,7 @@ class WPApp(object):
 
     Version = "Undefined"
 
-    def __init__(self, root_class_or_handler, strict=False, 
-            prefix=None, replace_prefix="",
-            environ={}):
+    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", environ={}):
 
         self.RootHandler = self.RootClass = None
         if inspect.isclass(root_class_or_handler):
@@ -476,8 +474,7 @@ class WPApp(object):
         self.ReplacePrefix = replace_prefix
         self.HandlerParams = []
         self.HandlerArgs = {}
-        self.Environ = {}
-        self.Environ.update(environ)
+        self.Environ = environ
         
     def _app_lock(self):
         return self._AppLock
