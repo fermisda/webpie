@@ -307,7 +307,6 @@ class WPHandler(object):
             "GLOBAL_AppRootPath":   self.appRootPath(),
             "GLOBAL_AppTopPath":    self.appTopPath(),  # for backward compatibility
             "GLOBAL_AppDirPath":    self.uriDir(),
-            "GLOBAL_ImagesPath":    self.uriDir()+"/images",
             "GLOBAL_AppVersion":    self.App.Version,
             "GLOBAL_AppObject":     self.App
             }
@@ -363,9 +362,14 @@ class WPHandler(object):
         return os.path.dirname(self.scriptUri())
 
     def appRootPath(self):
-        return self.App.appRootPath(self.Request.environ)
+        top = self.App.appRootPath(self.Request.environ)
+        if top == "/":  top = ""
+        return top
         
     appTopPath = appRootPath            # synonym for backward compatibility
+
+    def absolutePath(self, relpath):
+        return canonic_path("/" + self.appRootPath() + "/" + relpath)
 
     def renderTemplate(self, ignored, template, _dict = {}, **args):
         # backward compatibility method
@@ -650,15 +654,20 @@ class WPApp(object):
             root_handler._destroy()
         return out
 
-    def scriptUri(self, environ):
+    def scriptUri(self, request_or_environ):
+        if isinstance(request_or_environ, Request):
+            environ = request_or_environ.environ
+        elif isinstance(request_or_environ, dict):
+            environ = request_or_environ
+        else:
+            raise ValueError("expected Request object or the environ dictionary as the first argument. Got "+str(type(request_or_environ)))
         return environ.get('SCRIPT_NAME') or os.environ.get('SCRIPT_NAME', '')
         
-    def appRootPath(self, environ):
+    def appRootPath(self, request_or_environ):
         # combines SCRIPT_NAME, which comes from the HTTP Server, with App prefix
         # makes sure the result is absolute path (starts with '/')
         # should be used to build absolute URL path to be used by the client to address specific relative URIs        
-        return canonic_path('/' + self.scriptUri(environ) + '/' + (self.Prefix or ""))        # will remove extra slashes        
-
+        return canonic_path('/' + self.scriptUri(request_or_environ) + '/' + (self.Prefix or ""))        # will remove extra slashes        
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
