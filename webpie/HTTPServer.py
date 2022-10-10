@@ -275,6 +275,7 @@ class Service(Logged):
         self.ProcessorQueue = TaskQueue(5, delegate=self)
 
     def accept(self, request):
+        assert request is not None
         p = RequestProcessor(self.WPApp, request)
         request.AppName = self.Name
         self.ProcessorQueue << p
