@@ -641,6 +641,27 @@ class WPApp(object):
             root_handler._destroy()
         return out
 
+<<<<<<< HEAD
+=======
+    def scriptUri(self, request_or_environ):
+        if isinstance(request_or_environ, Request):
+            environ = request_or_environ.environ
+        elif isinstance(request_or_environ, dict):
+            environ = request_or_environ
+        else:
+            raise ValueError("expected Request object or the environ dictionary as the first argument. Got "+str(type(request_or_environ)))
+        return environ.get('SCRIPT_NAME') or os.environ.get('SCRIPT_NAME', '')
+
+    def externalPath(self, path):
+        # converts an absolute URL path to the path to be used by the client to reach the same method
+        # path must be absolute
+        # essentially trying to reverse all the URL rewriting, which was done to map the URL to the method
+        assert path.startswith("/"), f"Can not convert relative path {path} to external path"
+        if self.ReplacePrefix and path.startswith(self.ReplacePrefix):
+            path = path[len(self.ReplacePrefix):]
+        return self.canonicPath(self.ExternalAppRootPath + '/' + path)
+
+>>>>>>> rework_globals
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
