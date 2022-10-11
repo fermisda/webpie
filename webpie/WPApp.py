@@ -641,8 +641,6 @@ class WPApp(object):
             root_handler._destroy()
         return out
 
-<<<<<<< HEAD
-=======
     def scriptUri(self, request_or_environ):
         if isinstance(request_or_environ, Request):
             environ = request_or_environ.environ
@@ -661,7 +659,6 @@ class WPApp(object):
             path = path[len(self.ReplacePrefix):]
         return self.canonicPath(self.ExternalAppRootPath + '/' + path)
 
->>>>>>> rework_globals
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         #print('app call: path:', path)
