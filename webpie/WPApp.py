@@ -1,6 +1,7 @@
 from .webob import Response
 from .webob import Request as webob_request
 from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound
+from . import Version as WebPieVersion
     
 import os.path, os, stat, sys, traceback, fnmatch, datetime, inspect, json
 from threading import RLock
@@ -191,7 +192,7 @@ def makeResponse(resp):
     #print(response)
     return response
 
-class WPHandler:
+class WPHandler(object):
 
     Version = ""
     
@@ -248,10 +249,6 @@ class WPHandler:
     def _app_lock(self):
         return self.App._app_lock()
 
-    def initAtPath(self, path):
-        # override me
-        pass
-
     def _checkPermissions(self, x):
         #self.apacheLog("doc: %s" % (x.__doc__,))
         try:    docstr = x.__doc__
@@ -278,6 +275,12 @@ class WPHandler:
                 o._destroy()
         self.BeingDestroyed = False
         
+    def canonicPath(self, path):
+        return self.App.canonicPath(path)
+
+    def externalPath(self, path):
+        return self.App.externalPath(path)
+
     def destroy(self):
         # override me
         pass
@@ -290,20 +293,12 @@ class WPHandler:
         # override me
         return {}
 
-    def add_globals(self, d):
-        params = {  
-            'APP_URL':  self.AppURL,
-            'MY_PATH':  self.Path,
-            "GLOBAL_AppTopPath":    self.scriptUri(),
-            "GLOBAL_AppDirPath":    self.uriDir(),
-            "GLOBAL_ImagesPath":    self.uriDir()+"/images",
-            "GLOBAL_AppVersion":    self.App.Version,
-            "GLOBAL_AppObject":     self.App
-            }
-        params = self.App.add_globals(params)
-        params.update(self.jinja_globals())
-        params.update(d)
-        return params
+    def add_globals(self, data):
+        g = {}
+        self.App.add_globals(g)
+        g.update(self.jinja_globals())
+        g.update(data)
+        return g
 
     def render_to_string(self, temp, **args):
         params = self.add_globals(args)
@@ -344,16 +339,23 @@ class WPHandler:
         
     def getSessionData(self):
         return self.App.getSessionData()
-        
-        
+    
     def scriptUri(self, ignored=None):
-        return self.Request.environ.get('SCRIPT_NAME',
-                os.environ.get('SCRIPT_NAME', '')
-        )
-        
+        return self.Request.environ.get('SCRIPT_NAME', os.environ.get('SCRIPT_NAME', ''))
+
     def uriDir(self, ignored=None):
         return os.path.dirname(self.scriptUri())
+
+    def appRootPath(self):
+        top = self.App.appRootPath(self.Request.environ)
+        if top == "/":  top = ""
+        return top
         
+    appTopPath = appRootPath            # synonym for backward compatibility
+
+    def externalPath(self, path):
+        return self.App.externalPath(path)  # convenience
+
     def renderTemplate(self, ignored, template, _dict = {}, **args):
         # backward compatibility method
         params = {}
@@ -445,10 +447,7 @@ class WPApp(object):
 
     Version = "Undefined"
 
-    def __init__(self, root_class_or_handler, strict=False, 
-            static_path="/static", static_location=None, enable_static=False,
-            prefix=None, replace_prefix="",
-            environ={}):
+    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", environ={}):
 
         self.RootHandler = self.RootClass = None
         if inspect.isclass(root_class_or_handler):
@@ -460,12 +459,11 @@ class WPApp(object):
         self._AppLock = RLock()
         self.ScriptHome = None
         self.Initialized = False
-        self.Prefix = prefix
-        self.ReplacePrefix = replace_prefix
+        self.Prefix = prefix            # this prefix will be removed from the URL path before the mapping to the method
+        self.ReplacePrefix = replace_prefix     # this prefix will be added after self.Prefix was removed
         self.HandlerParams = []
         self.HandlerArgs = {}
-        self.Environ = {}
-        self.Environ.update(environ)
+        self.Environ = environ
         
     def _app_lock(self):
         return self._AppLock
@@ -483,6 +481,18 @@ class WPApp(object):
 
     def init(self):
         pass
+
+    def canonicPath(self, path):
+        # removes all occurances of '//' and '/./'
+        # if the path was absoulute, it remains absoulte (starts with '/')
+        # makes sure the path does not end with '/' unless it is the root path "/"
+        while path and '//' in path:
+            path = path.replace('//', '/')
+        while path and "/./" in path:
+            path = path.replace("/./","/")
+        if path and path != '/' and path.endswith('/'):
+            path = path[:-1]
+        return path
 
     @app_synchronized
     def initJinjaEnvironment(self, tempdirs = [], filters = {}, globals = {}):
@@ -520,7 +530,7 @@ class WPApp(object):
         return Response(text, status = '500 Application Error')
 
     def convertPath(self, path):
-        if self.Prefix is not None:
+        if self.Prefix:
             matched = None
             if path == self.Prefix:
                 matched = path
@@ -530,14 +540,14 @@ class WPApp(object):
             if matched is None:
                 return None
                 
-            if self.ReplacePrefix is not None:
+            if self.ReplacePrefix:
                 path = self.ReplacePrefix + path[len(matched):]
                 
             path = path or "/"
             #print(f"converted to: [{path}]")
                 
         return path
-                
+        
     def handler_options(self, *params, **args):
         self.HandlerParams = params
         self.HandlerArgs = args
@@ -548,7 +558,6 @@ class WPApp(object):
         # walks down the tree of handler finds the web method and calls it
         # returs the Response
         #
-        
         
         path = path or "/"
         method = None
@@ -661,7 +670,6 @@ class WPApp(object):
 
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
-        #print('app call: path:', path)
         if not "WebPie.original_path" in environ:
             environ["WebPie.original_path"] = path
         environ.update(self.Environ)
@@ -679,15 +687,19 @@ class WPApp(object):
         environ["PATH_INFO"] = path
 
         req = Request(environ)
-        if not self.Initialized:
-            self.ScriptName = environ.get('SCRIPT_NAME') or ''
-            self.Script = environ.get('SCRIPT_FILENAME') or \
-                        os.environ.get('UWSGI_SCRIPT_FILENAME')
-            self.ScriptHome = os.path.dirname(self.Script or sys.argv[0]) or "."
-            self.init()
-            self.Initialized = True
+        with self:
+            if not self.Initialized:
+                self.ScriptName = environ.get('SCRIPT_NAME') or os.environ.get('SCRIPT_NAME', '')
+                self.Script = environ.get('SCRIPT_FILENAME') or os.environ.get('UWSGI_SCRIPT_FILENAME')
+                self.ScriptHome = os.environ.get('WEBPIE_SCRIPT_HOME') or os.path.dirname(self.Script or sys.argv[0]) or "."
+                self.ExternalAppRootPath = self.canonicPath('/' + self.ScriptName + '/' + (self.Prefix or ""))
+                self.init()
+                self.Initialized = True
 
-            self.init()
+        environ["WebPie.version"] = WebPieVersion
+        environ["WebPie.path_prefix"] = self.Prefix or ""
+        environ["WebPie.path_replace_prefix"] = self.ReplacePrefix or None
+        environ["WebPie.app_root_path"] = self.appRootPath()
 
         root_handler = self.RootHandler or self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
         #print("root_handler:", root_handler)
@@ -701,6 +713,7 @@ class WPApp(object):
         
     def init(self):
         # overraidable. will be called once after self.ScriptName, self.ScriptHome, self.Script are initialized
+        # and app.externalPath() is ready to be used
         # it is good idea to init Jinja environment here
         pass
         
@@ -708,13 +721,24 @@ class WPApp(object):
         # override me
         return {}
 
-    def add_globals(self, d):
-        params = {}
-        params.update(self.JGlobals)
-        params.update(self.jinja_globals())
-        params.update(d)
-        return params
+    def add_globals(self, g):
+        top = self.appRootPath()
+        g.update({ 
+            "GLOBAL_AppRootPath":   top,
+            "GLOBAL_AppTopPath":    top  # for backward compatibility, deprecated
+        })
+        g.update(self.JGlobals)
+        g.update(self.jinja_globals())
+        return g
+
+    def appRootPath(self):
+        top = self.ExternalAppRootPath
+        if top == "/":  top = ""            # make it possible to concatenate a tail, e.g.:
+                                            # appRootPath() + "/static"
+        return top
         
+    appTopPath = appRootPath            # synonym for backward compatibility, deprecated
+
     def render_to_string(self, temp, **kv):
         t = self.JEnv.get_template(temp)
         return t.render(self.add_globals(kv))
