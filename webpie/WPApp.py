@@ -658,7 +658,7 @@ class WPApp(object):
         else:
             raise ValueError("expected Request object or the environ dictionary as the first argument. Got "+str(type(request_or_environ)))
         return environ.get('SCRIPT_NAME') or os.environ.get('SCRIPT_NAME', '')
-        
+
     def externalPath(self, path):
         # converts an absolute URL path to the path to be used by the client to reach the same method
         # path must be absolute
@@ -667,7 +667,7 @@ class WPApp(object):
         if self.ReplacePrefix and path.startswith(self.ReplacePrefix):
             path = path[len(self.ReplacePrefix):]
         return self.canonicPath(self.ExternalAppRootPath + '/' + path)
- 
+
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
         if not "WebPie.original_path" in environ:
