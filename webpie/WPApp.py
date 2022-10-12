@@ -464,6 +464,7 @@ class WPApp(object):
         self.HandlerParams = []
         self.HandlerArgs = {}
         self.Environ = environ
+        print("App initialized at prefix:", prefix, "   replace prefix:", replace_prefix)
         
     def _app_lock(self):
         return self._AppLock
@@ -539,13 +540,15 @@ class WPApp(object):
                 
             if matched is None:
                 return None
-                
+
+            path = path[len(matched):]
+
             if self.ReplacePrefix:
-                path = self.ReplacePrefix + path[len(matched):]
+                path = self.ReplacePrefix + path
                 
-            path = path or "/"
+            path = self.canonicPath(path or "/")
             #print(f"converted to: [{path}]")
-                
+
         return path
         
     def handler_options(self, *params, **args):
