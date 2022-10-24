@@ -111,7 +111,7 @@ def app_synchronized(method):
             return method(self, *params, **args)
     return synchronized_method
 
-atomic = app_synchronized
+atomic = app_synchronized           # synonym
 
 def _sql_quote_sanitizer(name, value):
     return value.replace("'", "''")
@@ -707,7 +707,6 @@ class WPApp(object):
                 elif self.Sanitizer is not None:
                     relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
                 response = method(request, relpath, **args)  
-                #print("response:", response)                  
 
         except HTTPFound as val:    
             # redirect
