@@ -113,6 +113,14 @@ def app_synchronized(method):
 
 atomic = app_synchronized
 
+def _sql_quote_sanitizer(name, value):
+    return value.replace("'", "''")
+
+def _check_unsafe_sanitizer(name, value, unsafe="'"):
+    if value and any(c in value for c in unsafe):
+        raise UnsafeArgumentError(name, value)
+    return value
+
 class Request(webob_request):
     def __init__(self, *agrs, **kv):
         webob_request.__init__(self, *agrs, **kv)
@@ -143,6 +151,7 @@ class Request(webob_request):
 class HTTPResponseException(Exception):
     def __init__(self, response):
         self.value = response
+
 
 def makeResponse(resp):
     #
@@ -478,9 +487,14 @@ class WPStaticHandler(WPHandler):
 class WPApp(object):
 
     Version = "Undefined"
+    
+    Sanitizers = {
+            "sql":  _sql_quote_sanitizer,
+            "safe":  _check_unsafe_sanitizer
+        }
 
-    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", environ={},
-            unquote_args=True, sanitizer="safe"):
+    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", 
+            environ={}, unquote_args=True, sanitizer=None):
 
         self.RootHandler = self.RootClass = None
         if inspect.isclass(root_class_or_handler):
@@ -499,10 +513,6 @@ class WPApp(object):
         self.Environ = environ
         self.UnquoteArgs = unquote_args
 
-        self.Sanitizers = {
-                "sql":  self._sql_sanitizer,
-                "safe":  self._safe_sanitizer
-            }
         if isinstance(sanitizer, str):
             sanitizer = self.Sanitizers[sanitizer]
         self.Sanitizer = sanitizer
@@ -674,14 +684,6 @@ class WPApp(object):
             if name not in exclude:
                 sanitizer(name, value)
         return relpath, args
-
-    def _sql_sanitizer(self, name, value):
-        return value.replace("'", "''")
-
-    def _safe_sanitizer(self, name, value):
-        if value and "'" in value:
-            raise UnsafeArgumentError(name, value)
-        return value
 
     def wsgi_call(self, root_handler, environ, start_response):
         # path_to = '/'
