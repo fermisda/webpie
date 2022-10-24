@@ -1,7 +1,9 @@
 from .webob import Response
+from .webob.multidict import MultiDict
 from .webob import Request as webob_request
-from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound
+from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound, HTTPBadRequest
 from . import Version as WebPieVersion
+from urllib.parse import unquote_plus
     
 import os.path, os, stat, sys, traceback, fnmatch, datetime, inspect, json
 from threading import RLock
@@ -19,7 +21,12 @@ else:
         return bytes(s)
     def to_str(b):    
         return str(b)
+
+class UnsafeArgumentError(Exception):
     
+    def __str__(self):
+        name, value = self.args
+        return f"Unsafe argument value: {name}={value}"
 
 try:
     from collections.abc import Iterable    # Python3
@@ -44,7 +51,26 @@ _MIME_TYPES_BASE = {
 #
 # Decorators
 #
- 
+
+def sanitize(sanitizer=None, exclude=[]):
+    def decorator(method):
+        szr = sanitizer
+        def decorated(handler, request, relpath, *params, **args):
+            "do-not-sanitize"       # signal "already sanitized"
+            sanitizer = szr
+            if sanitizer is None:
+                sanitizer = handler.App.Sanitizer
+            elif sanitizer is False:
+                sanitizer = None
+            elif isinstance(sanitizer, str):
+                sanitizer = handler.App.Sanitizers[sanitizer]
+            if sanitizer is not None:
+                relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude)
+                #print("decorated: relpath:", relpath)
+            return method(handler, request, relpath, *params, **args)
+        return decorated
+    return decorator
+
 def webmethod(permissions=None):
     #
     # Usage:
@@ -92,6 +118,7 @@ class Request(webob_request):
         webob_request.__init__(self, *agrs, **kv)
         self.args = self.environ['QUERY_STRING']
         self._response = Response()
+        self._GET = self._POST = None
         
     def write(self, txt):
         self._response.write(txt)
@@ -112,7 +139,7 @@ class Request(webob_request):
         set_response_content_type,
         del_response_content_type, 
         "Response content type")
-
+        
 class HTTPResponseException(Exception):
     def __init__(self, response):
         self.value = response
@@ -222,11 +249,14 @@ class WPHandler(object):
         elif name in self._WebMethods:
             attr = self._WebMethods[name]
             allowed = True
-            
+
         if attr is None:
             return None
-            
-        if callable(attr):
+
+        if isinstance(attr, WPHandler):
+            return attr
+        elif callable(attr):
+            allowed = allowed and not name.startswith('_')
             allowed = allowed or (
                         (self._MethodNames is not None 
                                 and name in self._MethodNames)
@@ -236,8 +266,6 @@ class WPHandler(object):
                     )
             if not allowed:
                 return None
-            return attr
-        elif isinstance(attr, WPHandler):
             return attr
         else:
             return None
@@ -258,7 +286,7 @@ class WPHandler(object):
             #self.apacheLog("roles: %s" % (roles,))
             return self.checkRoles(roles)
         return True
-        
+
     def checkRoles(self, roles):
         # override me
         return True
@@ -376,9 +404,13 @@ class WPHandler(object):
         lines = (
             ["request.environ:"]
             + ["  %s = %s" % (k, repr(v)) for k, v in sorted(req.environ.items())]
-            + ["relpath: %s" % (relpath or "")]
-            + ["args:"]
+            + ["\nrelpath: %s" % (relpath or "")]
+            + ["\nargs:"]
             + ["  %s = %s" % (k, repr(v)) for k, v in args.items()]
+            + ["\nrequest.GET:"]
+            + ["  %s = %s" % (k, repr(v)) for k, v in req.GET.items()]
+            + ["\nrequest.POST:"]
+            + ["  %s = %s" % (k, repr(v)) for k, v in req.POST.items()]
         )
         return "\n".join(lines) + "\n", "text/plain"
         
@@ -447,7 +479,8 @@ class WPApp(object):
 
     Version = "Undefined"
 
-    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", environ={}):
+    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", environ={},
+            unquote_args=True, sanitizer="safe"):
 
         self.RootHandler = self.RootClass = None
         if inspect.isclass(root_class_or_handler):
@@ -464,7 +497,16 @@ class WPApp(object):
         self.HandlerParams = []
         self.HandlerArgs = {}
         self.Environ = environ
-        print("App initialized at prefix:", prefix, "   replace prefix:", replace_prefix)
+        self.UnquoteArgs = unquote_args
+
+        self.Sanitizers = {
+                "sql":  self._sql_sanitizer,
+                "safe":  self._safe_sanitizer
+            }
+        if isinstance(sanitizer, str):
+            sanitizer = self.Sanitizers[sanitizer]
+        self.Sanitizer = sanitizer
+        
         
     def _app_lock(self):
         return self._AppLock
@@ -524,7 +566,7 @@ class WPApp(object):
         exc_text = ''.join(exc_text)
         text = """<html><body><h2>Application error</h2>
             <h3>%s</h3>
-            <pre>%s</pre>
+            <pre>\n%s</pre>
             </body>
             </html>""" % (headline, exc_text)
         #print exc_text
@@ -600,17 +642,47 @@ class WPApp(object):
                 k = words[0]
                 if k:
                     v = None
-                    if len(words) > 1:  v = words[1]
+                    if len(words) > 1:  v = unquote_plus(words[1]) if self.UnquoteArgs else words[1]
                     if k in out:
                         old = out[k]
-                        if type(old) != type([]):
-                            old = [old]
-                            out[k] = old
-                        out[k].append(v)
+                        if not isinstance(old, list):
+                            old = out[k] = [old]
+                        old.append(v)
                     else:
                         out[k] = v
         return out
-        
+
+    def sanitize(self, sanitizer, request, relpath, args, exclude=[]):
+        if sanitizer is None:
+            return relpath, args
+        if "(relpath)" not in exclude:  
+            relpath = sanitizer('(relpath)', relpath)
+        args = {
+                name: value if value is None or name in exclude
+                else (
+                    [sanitizer(name, v) for v in value] 
+                    if isinstance(value, list)
+                    else sanitizer(name, value)
+                ) 
+                for name, value in args.items()
+        }
+        #
+        # run sanitizer on GET and POST dictionaries of the request too, even though
+        # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
+        #
+        for name, value in list(request.GET.items()) + list(request.POST.items()):
+            if name not in exclude:
+                sanitizer(name, value)
+        return relpath, args
+
+    def _sql_sanitizer(self, name, value):
+        return value.replace("'", "''")
+
+    def _safe_sanitizer(self, name, value):
+        if value and "'" in value:
+            raise UnsafeArgumentError(name, value)
+        return value
+
     def wsgi_call(self, root_handler, environ, start_response):
         # path_to = '/'
         path = environ.get('PATH_INFO', '')
@@ -628,9 +700,13 @@ class WPApp(object):
                 response = HTTPNotFound("Invalid path %s" % (path,))
             else:
                 #print("method:", method)
+                if hasattr(method, "__doc__") and "do-not-sanitize" in (method.__doc__ or ""):
+                    pass
+                elif self.Sanitizer is not None:
+                    relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
                 response = method(request, relpath, **args)  
                 #print("response:", response)                  
-            
+
         except HTTPFound as val:    
             # redirect
             response = val
@@ -640,8 +716,10 @@ class WPApp(object):
         except HTTPResponseException as val:
             #print 'caught:', type(val), val
             response = val
-        except:
-            response = self.applicationErrorResponse("Uncaught exception", sys.exc_info())
+        except UnsafeArgumentError as e:
+            response = HTTPBadRequest(str(e))
+        except Exception as e:
+            response = self.applicationErrorResponse(str(e), sys.exc_info())
 
         try:    
             response = makeResponse(response)
@@ -708,7 +786,8 @@ class WPApp(object):
         #print("root_handler:", root_handler)
             
         try:
-            return self.wsgi_call(root_handler, environ, start_response)
+            out = self.wsgi_call(root_handler, environ, start_response)
+            return out
         except:
             resp = self.applicationErrorResponse(
                 "Uncaught exception", sys.exc_info())

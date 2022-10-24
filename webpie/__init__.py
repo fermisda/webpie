@@ -1,4 +1,4 @@
-from .WPApp import WPApp, WPHandler, app_synchronized, webmethod, atomic, WPStaticHandler, Response
+from .WPApp import WPApp, WPHandler, app_synchronized, webmethod, atomic, WPStaticHandler, Response, sanitize
 from .WPSessionApp import WPSessionApp
 from .uid import uid, init as init_uid
 from .HTTPServer import run_server, HTTPServer, RequestProcessor

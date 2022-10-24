@@ -231,14 +231,20 @@ class RequestProcessor(Task):
                 csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
                 return self.error(error)
             
+
+            #print("RequestProcessor.run: out:", out)
             if self.OutBuffer:      # from start_response
+                #print("RequestProcessor.run: OutBuffer:", self.OutBuffer)
                 csock.sendall(to_bytes(self.OutBuffer))
                 
             self.ByteCount = 0
 
             for line in out:
                 line = to_bytes(line)
-                try:    csock.sendall(line)
+                try:
+                    #print("sending line:", line)    
+                    csock.sendall(line)
+                    #print("sent")
                 except Exception as e:
                     return self.error("error sending body: %s" % (e,))
                 self.ByteCount += len(line)
@@ -308,10 +314,14 @@ class Request(object):
         
     def close(self):
         if self.CSock is not None:
-            try:    self.CSock.close()
-            except: pass
+            try:    
+                self.CSock.shutdown(socket.SHUT_RDWR)       # looks like this is needed on MacOS
+                self.CSock.close()
+            except: 
+                pass
             self.CSock = None
         self.SSLInfo = None
+        #print("request closed")
 
     def wsgi_env(self):
         header = self.HTTPHeader
