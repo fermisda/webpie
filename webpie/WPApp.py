@@ -73,7 +73,7 @@ def sanitize(sanitizer=None, exclude=[], only=None):
             elif isinstance(sanitizer, str):
                 sanitizer = handler.App.Sanitizers[sanitizer]
             if sanitizer is not None:
-                print("sanitizing...")
+                #print("sanitizing...")
                 relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude, only=only)
                 #print("decorated: relpath:", relpath)
             return method(handler, request, relpath, *params, **args)
@@ -120,13 +120,13 @@ def app_synchronized(method):
             return method(self, *params, **args)
     return synchronized_method
 
-atomic = app_synchronized
+atomic = app_synchronized           # synonym
 
 def _sql_quote_sanitizer(name, value):
     return value.replace("'", "''")
 
 def _check_unsafe_sanitizer(name, value, unsafe="'"):
-    print("_check_unsafe_sanitizer: name=", name, "   value:", value)
+    #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
     if value and any(c in value for c in unsafe):
         raise UnsafeArgumentError(name, value)
     return value
@@ -691,11 +691,6 @@ class WPApp(object):
         # run sanitizer on GET and POST dictionaries of the request too, even though
         # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
         #
-        print("sanitizing GET and POST...")
-        print("env:")
-        for k, v in request.environ.items():
-            print(k, v)
-        print(request.POST)
         for name, value in list(request.GET.items()) + list(request.POST.items()):
             if name not in exclude:
                 sanitizer(name, value)
@@ -724,7 +719,6 @@ class WPApp(object):
                     print("WPApp.wsgi_call: sanitizing...")
                     relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
                 response = method(request, relpath, **args)  
-                #print("response:", response)                  
 
         except HTTPFound as val:    
             # redirect
