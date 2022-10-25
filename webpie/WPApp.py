@@ -52,12 +52,20 @@ _MIME_TYPES_BASE = {
 # Decorators
 #
 
-def sanitize(sanitizer=None, exclude=[]):
+def sanitize(sanitizer=None, exclude=[], only=None):
     def decorator(method):
         szr = sanitizer
+        onl = only
+        excl = exclude
         def decorated(handler, request, relpath, *params, **args):
             "do-not-sanitize"       # signal "already sanitized"
             sanitizer = szr
+            only = onl
+            exclude = excl
+            if isinstance(exclude, str):
+                exclude = [exclude]
+            if isinstance(only, str):
+                only = [only]
             if sanitizer is None:
                 sanitizer = handler.App.Sanitizer
             elif sanitizer is False:
@@ -65,7 +73,8 @@ def sanitize(sanitizer=None, exclude=[]):
             elif isinstance(sanitizer, str):
                 sanitizer = handler.App.Sanitizers[sanitizer]
             if sanitizer is not None:
-                relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude)
+                print("sanitizing...")
+                relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude, only=only)
                 #print("decorated: relpath:", relpath)
             return method(handler, request, relpath, *params, **args)
         return decorated
@@ -117,6 +126,7 @@ def _sql_quote_sanitizer(name, value):
     return value.replace("'", "''")
 
 def _check_unsafe_sanitizer(name, value, unsafe="'"):
+    print("_check_unsafe_sanitizer: name=", name, "   value:", value)
     if value and any(c in value for c in unsafe):
         raise UnsafeArgumentError(name, value)
     return value
@@ -126,7 +136,6 @@ class Request(webob_request):
         webob_request.__init__(self, *agrs, **kv)
         self.args = self.environ['QUERY_STRING']
         self._response = Response()
-        self._GET = self._POST = None
         
     def write(self, txt):
         self._response.write(txt)
@@ -662,13 +671,15 @@ class WPApp(object):
                         out[k] = v
         return out
 
-    def sanitize(self, sanitizer, request, relpath, args, exclude=[]):
+    def sanitize(self, sanitizer, request, relpath, args, exclude=[], only=None):
         if sanitizer is None:
             return relpath, args
         if "(relpath)" not in exclude:  
             relpath = sanitizer('(relpath)', relpath)
         args = {
-                name: value if value is None or name in exclude
+                name: value if value is None 
+                        or name in exclude 
+                        or only is not None and name not in only
                 else (
                     [sanitizer(name, v) for v in value] 
                     if isinstance(value, list)
@@ -680,6 +691,11 @@ class WPApp(object):
         # run sanitizer on GET and POST dictionaries of the request too, even though
         # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
         #
+        print("sanitizing GET and POST...")
+        print("env:")
+        for k, v in request.environ.items():
+            print(k, v)
+        print(request.POST)
         for name, value in list(request.GET.items()) + list(request.POST.items()):
             if name not in exclude:
                 sanitizer(name, value)
@@ -705,6 +721,7 @@ class WPApp(object):
                 if hasattr(method, "__doc__") and "do-not-sanitize" in (method.__doc__ or ""):
                     pass
                 elif self.Sanitizer is not None:
+                    print("WPApp.wsgi_call: sanitizing...")
                     relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
                 response = method(request, relpath, **args)  
                 #print("response:", response)                  

@@ -10,6 +10,6 @@ __version__ = Version
 
 __all__ = [ "WPApp", "WPHandler", "Response", 
 	"WPSessionApp", "HTTPServer", "app_synchronized", "webmethod", "WPStaticHandler",
-    "Logged", "Logger", "yaml_expand"
+    "Logged", "Logger", "yaml_expand", "sanitize"
 ]
 
