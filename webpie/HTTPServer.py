@@ -1,4 +1,4 @@
-import fnmatch, traceback, sys, time, os.path, stat, pprint, re, signal, importlib
+import fnmatch, traceback, sys, time, os.path, stat, pprint, re, signal, importlib, platform
 
 from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue, Primitive
@@ -11,7 +11,8 @@ from .py3 import PY2, PY3, to_str, to_bytes
 
 import pythreader
         
-        
+MacOS = platform.system().lower() == "darwin"
+
 class BodyFile(object):
     
     def __init__(self, buf, sock, length):
@@ -315,7 +316,8 @@ class Request(object):
     def close(self):
         if self.CSock is not None:
             try:    
-                self.CSock.shutdown(socket.SHUT_RDWR)       # looks like this is needed on MacOS
+                if MacOS:
+                    self.CSock.shutdown(socket.SHUT_RDWR)       # looks like this is needed on MacOS
                 self.CSock.close()
             except: 
                 pass
