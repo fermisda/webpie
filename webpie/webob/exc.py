@@ -237,7 +237,7 @@ class WSGIHTTPException(Response, HTTPException):
     title = 'Internal Server Error'
     explanation = ''
     body_template_obj = Template('''\
-${explanation}<br /><br />
+${explanation}
 ${detail}
 ${html_comment}
 ''')
@@ -336,7 +336,6 @@ ${body}''')
             offers=['text/html', 'application/json'],
         )
         match = acceptable_offers[0][0] if acceptable_offers else None
-
         if match == 'text/html':
             content_type = 'text/html'
             body = self.html_body(environ)

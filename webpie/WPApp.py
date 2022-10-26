@@ -22,11 +22,10 @@ else:
     def to_str(b):    
         return str(b)
 
-class UnsafeArgumentError(Exception):
-    
+class InvalidArgumentError(Exception):
     def __str__(self):
         name, value = self.args
-        return f"Unsafe argument value: {name}={value}"
+        return f"Invalid argument value: {name}={value}"
 
 try:
     from collections.abc import Iterable    # Python3
@@ -47,6 +46,20 @@ _MIME_TYPES_BASE = {
         "json":   "text/json",
         "css":  "text/css"
     }
+
+def _sql_quote_sanitizer(name, value):
+    return value.replace("'", "''")
+
+def _check_unsafe_sanitizer(name, value, unsafe="'"):
+    #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
+    if value and any(c in value for c in unsafe):
+        raise InvalidArgumentError(name, value)
+    return value
+
+_Sanitizers = {
+    "sql":  _sql_quote_sanitizer,
+    "safe":  _check_unsafe_sanitizer
+}
 
 #
 # Decorators
@@ -121,15 +134,6 @@ def app_synchronized(method):
     return synchronized_method
 
 atomic = app_synchronized           # synonym
-
-def _sql_quote_sanitizer(name, value):
-    return value.replace("'", "''")
-
-def _check_unsafe_sanitizer(name, value, unsafe="'"):
-    #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
-    if value and any(c in value for c in unsafe):
-        raise UnsafeArgumentError(name, value)
-    return value
 
 class Request(webob_request):
     def __init__(self, *agrs, **kv):
@@ -496,11 +500,7 @@ class WPStaticHandler(WPHandler):
 class WPApp(object):
 
     Version = "Undefined"
-    
-    Sanitizers = {
-            "sql":  _sql_quote_sanitizer,
-            "safe":  _check_unsafe_sanitizer
-        }
+    Sanitizers = _Sanitizers
 
     def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", 
             environ={}, unquote_args=True, sanitizer=None):
@@ -525,17 +525,16 @@ class WPApp(object):
         if isinstance(sanitizer, str):
             sanitizer = self.Sanitizers[sanitizer]
         self.Sanitizer = sanitizer
-        
-        
+
     def _app_lock(self):
         return self._AppLock
-        
+
     def __enter__(self):
         return self._AppLock.__enter__()
-        
+
     def __exit__(self, *params):
         return self._AppLock.__exit__(*params)
-    
+
     # override
     @app_synchronized
     def acceptIncomingTransfer(self, method, uri, headers):
@@ -692,7 +691,7 @@ class WPApp(object):
         # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
         #
         for name, value in list(request.GET.items()) + list(request.POST.items()):
-            if name not in exclude:
+            if name not in exclude and (only is None or name in olny):
                 sanitizer(name, value)
         return relpath, args
 
@@ -716,7 +715,7 @@ class WPApp(object):
                 if hasattr(method, "__doc__") and "do-not-sanitize" in (method.__doc__ or ""):
                     pass
                 elif self.Sanitizer is not None:
-                    print("WPApp.wsgi_call: sanitizing...")
+                    #print("WPApp.wsgi_call: sanitizing...")
                     relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
                 response = method(request, relpath, **args)  
 
@@ -729,7 +728,7 @@ class WPApp(object):
         except HTTPResponseException as val:
             #print 'caught:', type(val), val
             response = val
-        except UnsafeArgumentError as e:
+        except InvalidArgumentError as e:
             response = HTTPBadRequest(str(e))
         except Exception as e:
             response = self.applicationErrorResponse(str(e), sys.exc_info())
