@@ -508,7 +508,7 @@ class MPMultiServer(PyThread, Logged):
             p.stop()
         
 Usage = """
-multiserver <config.yaml>
+python multiserver.py <config.yaml>
 """
 
 class   SignalHandler:
