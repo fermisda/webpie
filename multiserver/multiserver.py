@@ -190,12 +190,9 @@ class Service(Primitive, Logged):
                         request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
                         request.AppName, header.path(),
-                        task.ResponseStatus, task.ByteCount, start_time, processing_time, error
+                        task.StatusCode, task.ByteCount, start_time, processing_time, error
                     )
         self.log(log_line, channel="requests")
-        #print("Service.taskEnded: task.Traceback:", task.Traceback)
-        if task.Traceback:
-            self.error(request.Id, task.Traceback)
 
     def accept(self, request):
         #print(f"Service {self}: accept()")
@@ -300,6 +297,7 @@ class MPLogger(PyThread, Logged):
     # subprocess side
     #
     def log(self, *message, sep=" ", who=None, t=None, channel="log"):
+        #print("MPLogger(subprocess side).log: channel:", channel, "  message:", *message)
         message = tuple(str(p) for p in message)
         self.Queue.put((who, channel, time.time())+message)
             

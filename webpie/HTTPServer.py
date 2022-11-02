@@ -200,7 +200,7 @@ class HTTPHeader(object):
 class RequestProcessor(Task):
     
     def __init__(self, wsgi_app, request):
-        Task.__init__(self, name=f"[RequestTask {request.Id}]")
+        Task.__init__(self, name=f"[RequestProcessor {request.Id}]")
         #print("RequestTask: wsgi_app:", wsgi_app)
         self.WSGIApp = wsgi_app
         self.Request = request

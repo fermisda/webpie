@@ -100,7 +100,7 @@ class Logged(AbstractLogger):
         #print("Logged: LogName=", self.LogName)
 
     def log(self, *message, sep=" ", who=None, t=None, channel="log"):
-        #print("Logged.log(", message, sep, who, t, channel, ")")
+        print("Logged.log(", message, sep, who, t, channel, ")")
         who = who or self.LogName
         logger = self.Logger or DefaultLogger
         if logger is not None and (channel != "debug" or self.Debug):
