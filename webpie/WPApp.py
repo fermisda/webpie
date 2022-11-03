@@ -22,11 +22,10 @@ else:
     def to_str(b):    
         return str(b)
 
-class UnsafeArgumentError(Exception):
-    
+class InvalidArgumentError(Exception):
     def __str__(self):
         name, value = self.args
-        return f"Unsafe argument value: {name}={value}"
+        return f"Invalid argument value: {name}={value}"
 
 try:
     from collections.abc import Iterable    # Python3
@@ -48,16 +47,38 @@ _MIME_TYPES_BASE = {
         "css":  "text/css"
     }
 
+def _sql_quote_sanitizer(name, value):
+    return value.replace("'", "''")
+
+def _check_unsafe_sanitizer(name, value, unsafe="'"):
+    #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
+    if value and any(c in value for c in unsafe):
+        raise InvalidArgumentError(name, value)
+    return value
+
+_Sanitizers = {
+    "sql":  _sql_quote_sanitizer,
+    "safe":  _check_unsafe_sanitizer
+}
+
 #
 # Decorators
 #
 
-def sanitize(sanitizer=None, exclude=[]):
+def sanitize(sanitizer=None, exclude=[], only=None):
     def decorator(method):
         szr = sanitizer
+        onl = only
+        excl = exclude
         def decorated(handler, request, relpath, *params, **args):
             "do-not-sanitize"       # signal "already sanitized"
             sanitizer = szr
+            only = onl
+            exclude = excl
+            if isinstance(exclude, str):
+                exclude = [exclude]
+            if isinstance(only, str):
+                only = [only]
             if sanitizer is None:
                 sanitizer = handler.App.Sanitizer
             elif sanitizer is False:
@@ -65,7 +86,8 @@ def sanitize(sanitizer=None, exclude=[]):
             elif isinstance(sanitizer, str):
                 sanitizer = handler.App.Sanitizers[sanitizer]
             if sanitizer is not None:
-                relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude)
+                #print("sanitizing...")
+                relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude, only=only)
                 #print("decorated: relpath:", relpath)
             return method(handler, request, relpath, *params, **args)
         return decorated
@@ -133,13 +155,11 @@ def canonic_path(path):
         path = path[:-1]
     return path
 
-
 class Request(webob_request):
     def __init__(self, *agrs, **kv):
         webob_request.__init__(self, *agrs, **kv)
         self.args = self.environ['QUERY_STRING']
         self._response = Response()
-        self._GET = self._POST = None
         
     def write(self, txt):
         self._response.write(txt)
@@ -530,11 +550,7 @@ class WPStaticHandler(WPHandler):
 class WPApp(object):
 
     Version = "Undefined"
-    
-    Sanitizers = {
-            "sql":  _sql_quote_sanitizer,
-            "safe":  _check_unsafe_sanitizer
-        }
+    Sanitizers = _Sanitizers
 
     def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", 
             environ={}, unquote_args=True, sanitizer=None):
@@ -559,17 +575,16 @@ class WPApp(object):
         if isinstance(sanitizer, str):
             sanitizer = self.Sanitizers[sanitizer]
         self.Sanitizer = sanitizer
-        
-        
+
     def _app_lock(self):
         return self._AppLock
-        
+
     def __enter__(self):
         return self._AppLock.__enter__()
-        
+
     def __exit__(self, *params):
         return self._AppLock.__exit__(*params)
-    
+
     # override
     @app_synchronized
     def acceptIncomingTransfer(self, method, uri, headers):
@@ -657,13 +672,15 @@ class WPApp(object):
                         out[k] = v
         return out
 
-    def sanitize(self, sanitizer, request, relpath, args, exclude=[]):
+    def sanitize(self, sanitizer, request, relpath, args, exclude=[], only=None):
         if sanitizer is None:
             return relpath, args
         if "(relpath)" not in exclude:  
             relpath = sanitizer('(relpath)', relpath)
         args = {
-                name: value if value is None or name in exclude
+                name: value if value is None 
+                        or name in exclude 
+                        or only is not None and name not in only
                 else (
                     [sanitizer(name, v) for v in value] 
                     if isinstance(value, list)
@@ -676,7 +693,7 @@ class WPApp(object):
         # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
         #
         for name, value in list(request.GET.items()) + list(request.POST.items()):
-            if name not in exclude:
+            if name not in exclude and (only is None or name in olny):
                 sanitizer(name, value)
         return relpath, args
 
@@ -715,7 +732,7 @@ class WPApp(object):
         except HTTPResponseException as val:
             #print 'caught:', type(val), val
             response = val
-        except UnsafeArgumentError as e:
+        except InvalidArgumentError as e:
             response = HTTPBadRequest(str(e))
         except Exception as e:
             response = self.applicationErrorResponse(str(e), sys.exc_info())

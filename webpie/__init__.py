@@ -13,4 +13,3 @@ __all__ = [ "WPApp", "WPHandler", "Response",
 	"WPSessionApp", "HTTPServer", "app_synchronized", "webmethod", "WPStaticHandler",
     "Logged", "Logger", "yaml_expand", "Version", "http_exceptions" 
 ]
-

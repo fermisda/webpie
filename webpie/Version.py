@@ -1,4 +1,4 @@
-Version = "5.10.1"
+Version = "5.12.0"
 
 if __name__ == "__main__":
     print (Version)
