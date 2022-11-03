@@ -713,20 +713,6 @@ class WPApp(object):
                 response = root_handler(request, path, **args)
             else:
                 response = root_handler.handle(request, "", path_down, args)
-
-            if False:
-                method, relpath = self.find_web_method(root_handler, request, "", path_down, args)
-                #print("WPApp.wsgi_call: method:", method, "   relpath:", relpath)
-                if method is None:
-                    response = HTTPNotFound("Invalid path %s" % (path,))
-                else:
-                    #print("method:", method)
-                    if hasattr(method, "__doc__") and "do-not-sanitize" in (method.__doc__ or ""):
-                        pass
-                    elif self.Sanitizer is not None:
-                        relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
-                    response = method(request, relpath, **args)  
-
         except HTTPException as val:
             response = val
         except HTTPResponseException as val:
