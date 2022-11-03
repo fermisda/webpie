@@ -10,8 +10,7 @@ from .logs import Logged, Logger
 from .py3 import PY2, PY3, to_str, to_bytes
 
 import pythreader
-        
-        
+
 class BodyFile(object):
     
     def __init__(self, buf, sock, length):
@@ -225,7 +224,8 @@ class RequestProcessor(Task):
                 #print("env:")
                 #for k, v in env.items():
                 #    print(k,":",v)
-                out = self.WSGIApp(env, self.start_response)    
+                out = self.WSGIApp(env, self.start_response)
+                #print("HTTPServer: out:", out)
             except:
                 error = "error in wsgi_app: %s" % (traceback.format_exc(),)
                 csock.sendall(b"HTTP/1.1 500 Error\nContent-Type: text/plain\n\n"+to_bytes(error))
@@ -244,11 +244,12 @@ class RequestProcessor(Task):
                 try:
                     #print("sending line:", line)    
                     csock.sendall(line)
-                    #print("sent")
+                    #print("HTTPServer: sent:", line)
                 except Exception as e:
                     return self.error("error sending body: %s" % (e,))
                 self.ByteCount += len(line)
         finally:
+            #print("HTTPServer: closing request...")
             request.close()
             self.OutBuffer = None
             self.WSGIApp = None
@@ -315,13 +316,11 @@ class Request(object):
     def close(self):
         if self.CSock is not None:
             try:    
-                self.CSock.shutdown(socket.SHUT_RDWR)       # looks like this is needed on MacOS
                 self.CSock.close()
             except: 
                 pass
             self.CSock = None
         self.SSLInfo = None
-        #print("request closed")
 
     def wsgi_env(self):
         header = self.HTTPHeader

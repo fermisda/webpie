@@ -121,6 +121,19 @@ def _check_unsafe_sanitizer(name, value, unsafe="'"):
         raise UnsafeArgumentError(name, value)
     return value
 
+def canonic_path(path):
+    # removes all occurances of '//' and '/./'
+    # if the path was absoulute, it remains absoulte (starts with '/')
+    # makes sure the path does not end with '/' unless it is the root path "/"
+    while path and '//' in path:
+        path = path.replace('//', '/')
+    while path and "/./" in path:
+        path = path.replace("/./","/")
+    if path and path != '/' and path.endswith('/'):
+        path = path[:-1]
+    return path
+
+
 class Request(webob_request):
     def __init__(self, *agrs, **kv):
         webob_request.__init__(self, *agrs, **kv)
@@ -225,7 +238,6 @@ def makeResponse(resp):
     if content_type:
         response.content_type = content_type    # make sure to apply this after headers
     if text is not None:  response.text = text
-    #print(response)
     return response
 
 class WPHandler(object):
@@ -249,37 +261,6 @@ class WPHandler(object):
         if not self._Strict:
             self.addHandler(".env", self._env__)
             
-    def step_down(self, name):
-        if not name:    return self
-        allowed = not self._Strict
-        attr = None
-        if hasattr(self, name):
-            attr = getattr(self, name)
-        elif name in self._WebMethods:
-            attr = self._WebMethods[name]
-            allowed = True
-
-        if attr is None:
-            return None
-
-        if isinstance(attr, WPHandler):
-            return attr
-        elif callable(attr):
-            allowed = allowed and not name.startswith('_')
-            allowed = allowed or (
-                        (self._MethodNames is not None 
-                                and name in self._MethodNames)
-                    or
-                        (hasattr(method, "__doc__") 
-                                and method.__doc__ == _WebMethodSignature)
-                    )
-            if not allowed:
-                return None
-            return attr
-        else:
-            return None
-            
-        
     def addHandler(self, name, method):
         self._WebMethods[name] = method
 
@@ -313,7 +294,7 @@ class WPHandler(object):
         self.BeingDestroyed = False
         
     def canonicPath(self, path):
-        return self.App.canonicPath(path)
+        return canonic_path(path)
 
     def externalPath(self, path):
         return self.App.externalPath(path)
@@ -358,6 +339,18 @@ class WPHandler(object):
             buf.append(l)
         if buf:
             yield ''.join(buf)
+            
+    def query_string(self, args):
+        parts = []
+        for name, values in args.items():
+            if not isinstance(values, list):
+                values = [values]
+            for v in values:
+                if v is None:
+                    parts.append(name)
+                else:
+                    parts.append(f"{name}={v}")
+        return "&".join(parts)
 
     def render_to_response_iterator(self, temp, _merge_lines=0,
                     **more_args):
@@ -406,7 +399,7 @@ class WPHandler(object):
         
     #
     # This web methods can be used for debugging
-    # call it as "../.env"
+    # call it as ".../.env"
     #
 
     def _env__(self, req, relpath, **args):
@@ -422,7 +415,57 @@ class WPHandler(object):
             + ["  %s = %s" % (k, repr(v)) for k, v in req.POST.items()]
         )
         return "\n".join(lines) + "\n", "text/plain"
+
+    def handle(self, request, path, path_down, args):
+        orig_path = canonic_path("/".join([path]+path_down))
+        word = ""
+        while path_down and not word:
+            word, path_down = path_down[0], path_down[1:]
+        relpath = "/".join(path_down)
+
+        if not word:
+            if self.DefaultMethod:
+                qs = self.query_string(args)
+                uri = "./" + self.DefaultMethod
+                if qs:
+                    uri += "?" + uri
+                self.redirect(uri)
+            else:
+                raise HTTPNotFound("no default method defined")
+
+        self.Path = path or "/"
+        subhandler = None
+        allowed = not self._Strict
         
+        if hasattr(self, word):
+            subhandler = getattr(self, word)
+        elif word in self._WebMethods:
+            subhandler = self._WebMethods[word]
+            allowed = True
+
+        if subhandler is None:
+            raise HTTPNotFound("invalid path: " + orig_path)
+
+        if isinstance(subhandler, Response):
+            return subhandler
+        elif callable(subhandler):
+            allowed = allowed and not word.startswith('_')
+            allowed = allowed or (
+                        (self._MethodNames is not None 
+                                and word in self._MethodNames)
+                    or
+                        (hasattr(subhandler, "__doc__") 
+                                and subhandler.__doc__ == _WebMethodSignature)
+            )
+            if not allowed:
+                raise HTTPNotFound("invalid path: " + orig_path)
+            else:
+                return subhandler(request, relpath, **args)
+        elif isinstance(subhandler, WPHandler):
+            return subhandler.handle(request, path + "/" + word, path_down, args)
+        else:
+            raise HTTPNotFound("invalid path: " + orig_path)
+
 class WPStaticHandler(WPHandler):
     
     def __init__(self, request, app, root="static", default_file="index.html", cache_ttl=None):
@@ -535,18 +578,6 @@ class WPApp(object):
     def init(self):
         pass
 
-    def canonicPath(self, path):
-        # removes all occurances of '//' and '/./'
-        # if the path was absoulute, it remains absoulte (starts with '/')
-        # makes sure the path does not end with '/' unless it is the root path "/"
-        while path and '//' in path:
-            path = path.replace('//', '/')
-        while path and "/./" in path:
-            path = path.replace("/./","/")
-        if path and path != '/' and path.endswith('/'):
-            path = path[:-1]
-        return path
-
     @app_synchronized
     def initJinjaEnvironment(self, tempdirs = [], filters = {}, globals = {}):
         # to be called by subclass
@@ -598,51 +629,15 @@ class WPApp(object):
             if self.ReplacePrefix:
                 path = self.ReplacePrefix + path
                 
-            path = self.canonicPath(path or "/")
+            path = canonic_path(path or "/")
             #print(f"converted to: [{path}]")
 
         return path
-        
+
     def handler_options(self, *params, **args):
         self.HandlerParams = params
         self.HandlerArgs = args
         return self
-
-    def find_web_method(self, handler, request, path, path_down, args):
-        #
-        # walks down the tree of handler finds the web method and calls it
-        # returs the Response
-        #
-        
-        path = path or "/"
-        method = None
-        while path_down and not path_down[0]:
-            path_down.pop(0)
-            
-        #is_wp_handler = isinstance(handler, WPHandler)
-        #print(f"find_web_method({handler}, WPHandler:{is_wp_handler}, path={path}, path_down={path_down})")
-
-        if isinstance(handler, WPHandler):  
-            handler.Path = path
-            
-            if path_down:
-                name = path_down[0]
-                attr = handler.step_down(name)
-                if attr is not None:
-                    if not path.endswith("/"):  path += "/"
-                    return self.find_web_method(attr, request, path + name, path_down[1:], args)
-                    
-            if callable(handler):
-                method = handler
-            elif not path_down:
-                prefix = (path.split("/")[-1] or ".") + "/"
-                redirect = prefix + handler.DefaultMethod
-                raise HTTPFound(location=redirect)
-        elif callable(handler):
-            method = handler
-            
-        relpath = "/".join(path_down)
-        return method, relpath
 
     def parseQuery(self, query):
         out = {}
@@ -686,33 +681,36 @@ class WPApp(object):
         return relpath, args
 
     def wsgi_call(self, root_handler, environ, start_response):
-        # path_to = '/'
-        path = environ.get('PATH_INFO', '')
+        path = canonic_path(environ.get('PATH_INFO', ''))
         #while "//" in path:
         #    path.replace("//", "/")
         path_down = path.split("/")
+        if not path_down[0]:
+            path_down = path_down[1:]
         #while '' in path_down:
         #    path_down.remove('')
         args = self.parseQuery(environ.get("QUERY_STRING", ""))
         request = Request(environ)
         try:
-            method, relpath = self.find_web_method(root_handler, request, "", path_down, args)
-            #print("WPApp.wsgi_call: method:", method, "   relpath:", relpath)
-            if method is None:
-                response = HTTPNotFound("Invalid path %s" % (path,))
+            if callable(root_handler):
+                response = root_handler(request, path, **args)
             else:
-                #print("method:", method)
-                if hasattr(method, "__doc__") and "do-not-sanitize" in (method.__doc__ or ""):
-                    pass
-                elif self.Sanitizer is not None:
-                    relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
-                response = method(request, relpath, **args)  
+                response = root_handler.handle(request, "", path_down, args)
 
-        except HTTPFound as val:    
-            # redirect
-            response = val
+            if False:
+                method, relpath = self.find_web_method(root_handler, request, "", path_down, args)
+                #print("WPApp.wsgi_call: method:", method, "   relpath:", relpath)
+                if method is None:
+                    response = HTTPNotFound("Invalid path %s" % (path,))
+                else:
+                    #print("method:", method)
+                    if hasattr(method, "__doc__") and "do-not-sanitize" in (method.__doc__ or ""):
+                        pass
+                    elif self.Sanitizer is not None:
+                        relpath, args = self.sanitize(self.Sanitizer, request, relpath, args)
+                    response = method(request, relpath, **args)  
+
         except HTTPException as val:
-            #print 'caught:', type(val), val
             response = val
         except HTTPResponseException as val:
             #print 'caught:', type(val), val
@@ -748,7 +746,7 @@ class WPApp(object):
         assert path.startswith("/"), f"Can not convert relative path {path} to external path"
         if self.ReplacePrefix and path.startswith(self.ReplacePrefix):
             path = path[len(self.ReplacePrefix):]
-        return self.canonicPath(self.ExternalAppRootPath + '/' + path)
+        return canonic_path(self.ExternalAppRootPath + '/' + path)
 
     def __call__(self, environ, start_response):
         path = environ.get('PATH_INFO', '')
@@ -774,7 +772,7 @@ class WPApp(object):
                 self.ScriptName = environ.get('SCRIPT_NAME') or os.environ.get('SCRIPT_NAME', '')
                 self.Script = environ.get('SCRIPT_FILENAME') or os.environ.get('UWSGI_SCRIPT_FILENAME')
                 self.ScriptHome = os.environ.get('WEBPIE_SCRIPT_HOME') or os.path.dirname(self.Script or sys.argv[0]) or "."
-                self.ExternalAppRootPath = self.canonicPath('/' + self.ScriptName + '/' + (self.Prefix or ""))
+                self.ExternalAppRootPath = canonic_path('/' + self.ScriptName + '/' + (self.Prefix or ""))
                 self.init()
                 self.Initialized = True
 

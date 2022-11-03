@@ -17,8 +17,7 @@ class MyHandler(WPHandler):
         WPHandler.__init__(self, *params)
         self.addHandler("robots1.txt", RobotsHandler(*params))  # as external handler
         self.addHandler("robots2.txt", self.robots)             # as method
-        self.addHandler("robots3.txt", (robots_response, "text/plain"))         # as text
-        self.addHandler("robots.txt",                          # as Response object
+        self.addHandler("robots.txt",                           # as Response object
                 Response(robots_response, content_type="text/plain"))
         
     def robots(self, request, relpath, **args):                         

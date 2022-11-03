@@ -1,9 +1,11 @@
 # hello_world.py
 
-from webpie import WPApp
+from webpie import WPApp, WPHandler
 
-def hello(request, relpath):
-    return f"Hello, World!\n"
+class Handler(WPHandler):
 
-WPApp(hello).run_server(9000)
+    def hello(self, request, relpath, **args):
+        return f"Hello, World ({relpath})\n"
+
+WPApp(Handler).run_server(9000)
 
