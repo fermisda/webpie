@@ -436,7 +436,7 @@ class WPHandler(object):
         )
         return "\n".join(lines) + "\n", "text/plain"
 
-    def handle(self, request, path, path_down, args):
+    def _handle_request(self, request, path, path_down, args):
         orig_path = canonic_path("/".join([path]+path_down))
         word = ""
         while path_down and not word:
@@ -482,7 +482,7 @@ class WPHandler(object):
             else:
                 return subhandler(request, relpath, **args)
         elif isinstance(subhandler, WPHandler):
-            return subhandler.handle(request, path + "/" + word, path_down, args)
+            return subhandler._handle_request(request, path + "/" + word, path_down, args)
         else:
             raise HTTPNotFound("invalid path: " + orig_path)
 
@@ -712,7 +712,7 @@ class WPApp(object):
             if callable(root_handler):
                 response = root_handler(request, path, **args)
             else:
-                response = root_handler.handle(request, "", path_down, args)
+                response = root_handler._handle_request(request, "", path_down, args)
         except HTTPException as val:
             response = val
         except HTTPResponseException as val:
