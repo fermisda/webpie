@@ -468,6 +468,8 @@ class WPHandler(object):
 
         if isinstance(subhandler, Response):
             return subhandler
+        if isinstance(subhandler, tuple):
+            return makeResponse(subhandler)
         elif callable(subhandler):
             allowed = allowed and not word.startswith('_')
             allowed = allowed or (
@@ -709,7 +711,11 @@ class WPApp(object):
         args = self.parseQuery(environ.get("QUERY_STRING", ""))
         request = Request(environ)
         try:
-            if callable(root_handler):
+            if isinstance(root_handler, tuple):
+                response = makeResponse(root_handler)
+            elif isinstance(root_handler, Response):
+                response = root_handler
+            elif callable(root_handler):
                 response = root_handler(request, path, **args)
             else:
                 response = root_handler._handle_request(request, "", path_down, args)
