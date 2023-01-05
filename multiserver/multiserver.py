@@ -388,8 +388,8 @@ class MultiServerSubprocess(Process, Logged):
     MonitorInterval = 30.0
         
     def run(self):
-        self.Monitor = Monitor(logger)
-        self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
+        self.Monitor = Monitor(self.Logger)
+
         init_uid(tag="%03d" % (os.getpid() % 1000,))
         #print("MultiServerSubprocess.run()...")
         if setproctitle is not None:
@@ -400,6 +400,7 @@ class MultiServerSubprocess(Process, Logged):
         self.MasterSide = False
         self.Sock.settimeout(5.0)
 
+        self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
         self.Scheduler.add(self.check_config, interval = self.CheckConfigInterval, t0 = time.time() + self.CheckConfigInterval)
         self.Scheduler.add(self.run_monitor, interval = self.MonitorInterval)
         self.Scheduler.start()
