@@ -319,9 +319,6 @@ class Monitor(PyThread, Logged):
         
     def run(self, once=False):
         while True: 
-            vm, rss = getMemory()
-            self.log(f"memory usage: VM:{vm} RSS:{rss}")
-            
             try:
                 fd = os.open("/dev/null", os.O_RDWR)
                 os.close(fd)
