@@ -573,7 +573,8 @@ class HTTPServer(PyThread, Logged):
                 logging = logging, log_file=log_file, debug=debug,
                 certfile=certfile, keyfile=keyfile, verify=verify, ca_file=ca_file, password=password
         )
-        
+    
+    @synchronized
     def setServices(self, services):
         self.Services = services
         

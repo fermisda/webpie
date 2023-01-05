@@ -1,5 +1,5 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime
-from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
+from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile, Scheduler
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
 from webpie.logs import Logger, Logged
@@ -311,6 +311,36 @@ class MPLogger(PyThread, Logged):
     def log_request(self, who, *parts):
         self.log(who, *parts, channel="requests")
 
+class Monitor(PyThread, Logged):
+
+    def __init__(self, logger):
+        Logged.__init__(self, f"ThreadMonitor", logger=logger)
+        PyThread.__init__(self, name="ThreadMonitor", daemon=True)
+        
+    def run(self, once=False):
+        while True: 
+            vm, rss = getMemory()
+            self.log(f"memory usage: VM:{vm} RSS:{rss}")
+            
+            try:
+                fd = os.open("/dev/null", os.O_RDWR)
+                os.close(fd)
+            except:
+                self.log("Error opening/closing /dev/null: %s" % (traceback.format_exc(),))
+                fd = -1
+            counts = {}
+            for x in threading.enumerate():
+                n = x.__class__.__name__
+                if isinstance(x, Primitive):
+                        try:    n = x.kind
+                        except: pass
+                counts[n] = counts.get(n, 0)+1
+            self.log("thread counts:")
+            for n, c in sorted(counts.items()):
+                self.log("  %-50s%d" % (n+":", c))
+            if once:
+                break
+            time.sleep(30)
 
 class MultiServerSubprocess(Process, Logged):
     
@@ -331,6 +361,8 @@ class MultiServerSubprocess(Process, Logged):
         Logged.__init__(self, f"[Subprocess {self.MasterPID}]", logger=logger)
         #for key, value in sorted(self.__dict__.items()):
         #    print(key, type(value), value)
+        self.Monitor = Monitor(logger)
+        self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
         
     def reconfigure(self):
         #print("MultiServerSubprocess.reconfigure()...")
@@ -355,6 +387,7 @@ class MultiServerSubprocess(Process, Logged):
         #print("MultiServerSubprocess.reconfigure() done")
 
     CheckConfigInterval = 5.0
+    MonitorInterval = 30.0
         
     def run(self):
         init_uid(tag="%03d" % (os.getpid() % 1000,))
@@ -366,8 +399,11 @@ class MultiServerSubprocess(Process, Logged):
         self.reconfigure()
         self.MasterSide = False
         self.Sock.settimeout(5.0)
-        last_check_config = 0
-        
+
+        self.Sceduler.add(self.check_config, interval = self.CheckConfigInterval, t0 = time.time() + self.CheckConfigInterval)
+        self.Sceduler.add(self.run_monitor, interval = self.MonitorInterval)
+        self.Scheduler.start()
+
         while not self.Stop:
             
             # see if the parent process is still alive
@@ -391,21 +427,32 @@ class MultiServerSubprocess(Process, Logged):
                 elif msg == "reconfigure":
                     self.reconfigure()
 
-            if not self.Stop and time.time() > last_check_config + self.CheckConfigInterval:
-                if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
-                    self.reconfigure()
-                else:
-                    for svc in self.Services:
-                        if isinstance(svc, Service):
-                            svc.reloadIfNeeded()
-            last_check_config = time.time()
-            
+        self.Scheduler.stop()
         self.Server.close()
         self.Server.join()
         for svc in self.Services:
             svc.close()
             svc.join()
-        
+    
+    def check_config(self):
+        try:
+            if os.path.getmtime(self.ConfigFile) > self.ReconfiguredTime:
+                self.reconfigure()
+            else:
+                for svc in self.Services:
+                    if isinstance(svc, Service):
+                        svc.reloadIfNeeded()
+        except Exception as e:
+            self.error("Exception in check_config:\n", traceback.format_exc())
+        return self.CheckConfigInterval
+
+    def run_monitor(self):
+        try:
+            self.Monitor.run(once=True)
+        except Exception as e:
+            self.error("Exception in run_monitor:\n", traceback.format_exc())
+        return self.MonitorInterval
+
     def stop(self):
         if self.MasterSide:
             self.ConnectionToSubprocess.send("stop")
