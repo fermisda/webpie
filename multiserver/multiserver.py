@@ -400,8 +400,8 @@ class MultiServerSubprocess(Process, Logged):
         self.MasterSide = False
         self.Sock.settimeout(5.0)
 
-        self.Sceduler.add(self.check_config, interval = self.CheckConfigInterval, t0 = time.time() + self.CheckConfigInterval)
-        self.Sceduler.add(self.run_monitor, interval = self.MonitorInterval)
+        self.Scheduler.add(self.check_config, interval = self.CheckConfigInterval, t0 = time.time() + self.CheckConfigInterval)
+        self.Scheduler.add(self.run_monitor, interval = self.MonitorInterval)
         self.Scheduler.start()
 
         while not self.Stop:
