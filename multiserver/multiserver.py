@@ -361,8 +361,6 @@ class MultiServerSubprocess(Process, Logged):
         Logged.__init__(self, f"[Subprocess {self.MasterPID}]", logger=logger)
         #for key, value in sorted(self.__dict__.items()):
         #    print(key, type(value), value)
-        self.Monitor = Monitor(logger)
-        self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
         
     def reconfigure(self):
         #print("MultiServerSubprocess.reconfigure()...")
@@ -390,6 +388,8 @@ class MultiServerSubprocess(Process, Logged):
     MonitorInterval = 30.0
         
     def run(self):
+        self.Monitor = Monitor(logger)
+        self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
         init_uid(tag="%03d" % (os.getpid() % 1000,))
         #print("MultiServerSubprocess.run()...")
         if setproctitle is not None:
