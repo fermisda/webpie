@@ -382,7 +382,7 @@ class MultiServerSubprocess(Process, Logged):
         #print("MultiServerSubprocess.reconfigure() done")
 
     CheckConfigInterval = 5.0
-    MonitorInterval = 30.0
+    MonitorInterval = 60.0
         
     def run(self):
         self.Monitor = Monitor(self.Logger)
