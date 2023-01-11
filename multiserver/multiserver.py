@@ -146,7 +146,17 @@ class Service(Primitive, Logged):
             queue_capacity = config.get("queue_capacity", 10)
             self.QueueTimeout = config.get("queue_timeout", 0)
             self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity, delegate=self)
-            self.log("service initialized at prefix:[%s], replace prefix:[%s]" % (self.Prefix or "", self.ReplacePrefix or ""))
+            log_message = f"""\
+                prefix:               {self.Prefix}
+                replace prefix:       {self.ReplacePrefix}
+                max workers:          {max_workers}
+                queue capacity:       {queue_capacity}
+                queue timeout:        {self.QueueTimeout}
+                timeout:              {self.Timeout}
+                wsgi app:             {app}
+                  args:               {args}
+            """
+            self.log("service initialized:\n"+log_message)
             
         except:
             tb = traceback.format_exc()
