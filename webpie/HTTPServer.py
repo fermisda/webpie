@@ -269,17 +269,23 @@ class RequestProcessor(Task):
 
 class Service(Logged):
     
-    def __init__(self, app, logger=None):
+    def __init__(self, app, capacity=100, logger=None):
         Logged.__init__(self, f"[{app.__class__.__name__}]", logger=logger)
         self.Name = app.__class__.__name__
         self.WPApp = app
-        self.ProcessorQueue = TaskQueue(5, delegate=self)
+        self.ProcessorQueue = TaskQueue(5, capacity=capacity, delegate=self)
 
     def accept(self, request):
+        if not self.WPApp.match(request.URI):
+            return False, "no match"
         p = RequestProcessor(self.WPApp, request)
         request.AppName = self.Name
-        self.ProcessorQueue << p
-        return True
+        try:
+            self.ProcessorQueue.add(p, timeout=0)
+        except RuntimeError:
+            return True, "service unavailable"
+        else:
+            return True, "accepted"
 
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
         self.error("request failed:", "".join(traceback.format_exception(exc_type, exc_value, tb)))
@@ -298,7 +304,6 @@ class Service(Logged):
                         task.StatusCode, task.ByteCount
                     )
         self.log(log_line)
-
 
 class Request(object):
     
@@ -402,6 +407,9 @@ class Request(object):
                     issuer = self.format_x509_name(x509.get_issuer())
         return subject, issuer
 
+    def send_response(self, status, headline):
+        response = f"HTTP/1.1 {status} {headline}\n\n"
+        self.CSock.sendall(to_bytes(response))
 
 class RequestReader(Task, Logged):
 
@@ -432,6 +440,7 @@ class RequestReader(Task, Logged):
         csock = request.CSock
         saved_timeout = csock.gettimeout() 
         dispatched = False
+        dispatch_status = None
         try:
             #self.debug("started")
             self.Started = time.time()
@@ -462,16 +471,19 @@ class RequestReader(Task, Logged):
                     request.HTTPHeader = header
                     request.Body = body
                     self.debug("request received")
-                    service = self.Dispatcher.dispatch(self.Request)
-                    dispatched = service is not None
+                    dispatched, service, dispatch_status = self.Dispatcher.dispatch(self.Request)
         finally:
             if not dispatched:
                 if header is not None and header.Complete:
-                    try:    csock.sendall(b"HTTP/1.1 404 Not found\n\n")
-                    except: pass
-                    self.log('%s:%s :%s %s %s -> (nomatch)' % 
+                    if dispatch_status == "no match":
+                        request.send_response(404, "Service not found")
+                    elif dispatch_status == "service unavailable":
+                        request.send_response(503, "Service unavailable")
+                    else:
+                        request.send_response(500, "Request dispatch error " + dispatch_status)
+                    self.log('%s:%s :%s %s %s -> (%s)' % 
                         (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
-                            header.Method, header.OriginalURI
+                            header.Method, header.OriginalURI, dispatch_status
                         )
                     )
                 else:
@@ -516,7 +528,7 @@ class SSLSocketWrapper(object):
 
 class HTTPServer(PyThread, Logged):
 
-    def __init__(self, port, app=None, services=[], sock=None, logger=None, max_connections = 100, 
+    def __init__(self, port, app=None, services=[], sock=None, logger=None, max_connections = 100,
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = "-", debug=False,
@@ -534,7 +546,7 @@ class HTTPServer(PyThread, Logged):
         self.Timeout = timeout
         max_connections =  max_connections
         queue_capacity = max_queued
-        self.RequestReaderQueue = TaskQueue(max_connections, capacity=queue_capacity, delegate=self)
+        self.RequestReaderQueue = TaskQueue(max_connections, capacity=max_queued, delegate=self)
         self.SocketWrapper = SSLSocketWrapper(certfile, keyfile, verify, ca_file, password,
                 allow_proxies=allow_proxies) if keyfile else None
         
@@ -621,13 +633,15 @@ class HTTPServer(PyThread, Logged):
         try:    self.Sock.close()
         except: pass
 
-    @synchronized
     def dispatch(self, request):
-        for service in self.Services:
-            if service.accept(request):
-                return service
+        with self:
+            services = self.Services[:]
+        for service in services:
+            match, status = service.accept(request)
+            if match:
+                return status == "accepted", service, status
         else:
-            return None
+            return None, "no match"
 
     def taskFailed(self, queue, task, exc_type, exc, tb):
         traceback.print_exception(exc_type, exc, tb)

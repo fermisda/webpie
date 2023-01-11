@@ -1,4 +1,4 @@
-import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime, threading
+import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime, threading, pprint
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile, Scheduler
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
@@ -20,6 +20,7 @@ except: pass
 
 def services_from_config(config):
     templates = config.get("templates", {})
+    defaults = config.get("defaults", {})
     services = config.get("services", [])
     
     service_list = []
@@ -27,20 +28,19 @@ def services_from_config(config):
     for svc_cfg in services:
         #print("svc_cfg:", svc_cfg)
         svc = None
+        c = defaults.copy()
         if "template" in svc_cfg:
-            template = templates.get(svc_cfg.get("template", "*"))
-            if template is not None:
-                c = {}
-                c.update(template)
-                c.update(svc_cfg)
-                svc_cfg = expand(c)
-            names = svc_cfg.get("names", [svc_cfg.get("name")])
+            c.update(templates[svc_cfg["template"]])
+        c.update(svc_cfg)
+        svc_cfg = expand(c)
+        if "names" in svc_cfg:
+            names = svc_cfg.pop("names")
             for name in names:
                 c = svc_cfg.copy()
                 c["name"] = name
-                yield c
+                yield expand(c)
         else:
-            yield svc_cfg
+            yield expand(svc_cfg)
             
 class RequestTask(RequestProcessor):
     pass
@@ -144,8 +144,8 @@ class Service(Primitive, Logged):
 
             max_workers = config.get("max_workers", 5)
             queue_capacity = config.get("queue_capacity", 10)
-            self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity,
-                delegate=self)
+            self.QueueTimeout = config.get("queue_timeout", 0)
+            self.RequestQueue = TaskQueue(max_workers, capacity = queue_capacity, delegate=self)
             self.log("service initialized at prefix:[%s], replace prefix:[%s]" % (self.Prefix or "", self.ReplacePrefix or ""))
             
         except:
@@ -214,12 +214,17 @@ class Service(Primitive, Logged):
                 script_path = script_path[:-1]
             request.Environ["SCRIPT_NAME"] = script_path
             request.Environ["SCRIPT_FILENAME"] = self.ScriptFileName
-            self.RequestQueue.addTask(RequestTask(self.WSGIApp, request))
+            try:
+                self.RequestQueue.add(RequestTask(self.WSGIApp, request), timeout=self.QueueTimeout)
+            except RuntimeError:
+                # queue is full
+                return True, "service unavailable"
+                
             #print("Service", self, "   accepted")
-            return True
+            return True, "accepted"
         else:
             #print("Service", self, "   rejected")
-            return False
+            return False, "no match"
     
     def close(self):
         self.RequestQueue.hold()
@@ -244,14 +249,19 @@ class Service(Primitive, Logged):
         
 class MPLogger(PyThread, Logged):
     
-    def __init__(self, config_file, queue_size=-1, name=None):
+    def __init__(self, config_file, queue_size=-1, log_path = None, debug = None, requests_path = None, name=None):
         import multiprocessing
-        Logged.__init__(self, "MPLogger")
-        PyThread.__init__(self, name="MPLogger", daemon=True)
+        name = name or "MPLogger"
+        Logged.__init__(self, name)
+        PyThread.__init__(self, name=name, daemon=True)
         self.Queue = multiprocessing.Queue(queue_size)
         self.ConfigFile = config_file
         self.Loggers = {}           # {"sevice" -> Logger}
         self.Debug = {}
+        self.LogPath = log_path
+        self.RequestsPath = requests_path
+        self.ForceDebug = debug
+        #print("MPLogger: force debug:", debug)
         self.reconfigure()
 
     def reconfigure(self):
@@ -261,21 +271,33 @@ class MPLogger(PyThread, Logged):
         self.Loggers = {}
         config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
         log_config = config.get("logger", {})
+        split_by_servrce = log_config.get("split", False)
         logs_dir = log_config.get("logs_dir", "logs")
         if not os.path.isdir(logs_dir):
             raise ValueError(f"Logs directory {logs_dir} not found")
+        
         for service_cfg in services_from_config(config):
             #print("MPLogger: service_cfg:", service_cfg)
+            #print("service from cfg:")
+            #pprint.pprint(service_cfg)
             name = service_cfg["name"]
-            self.Debug[name] = debug = service_cfg.get("debug", False)
-            log_file = service_cfg.get("log", f"{name}.log")
-            if not log_file.startswith('/'):
-                log_file = logs_dir + "/" + log_file
-            requests_file = service_cfg.get("requests", f"{name}.requests")
-            if not requests_file.startswith('/'):
-                requests_file = logs_dir + "/" + requests_file
-            logger = Logger(log_file, debug=debug)
-            logger.add_channel("requests", path=requests_file)
+            self.Debug[name] = debug = service_cfg.get("debug", False) if self.ForceDebug is None else self.ForceDebug
+
+            log_path = self.LogPath
+            requests_path = self.RequestsPath
+            #print("MPLogger.reconfigure:", name, "    log path:", log_path, "   requests_path:", requests_path, "   debug:", debug)
+
+            if not log_path:
+                log_path = service_cfg.get("log", f"{name}.log")
+                if not log_path.startswith('/') and log_path != "-":
+                    log_path = logs_dir + "/" + log_path
+            if not requests_path:
+                requests_path = service_cfg.get("requests", f"{name}.requests")
+                if not requests_path.startswith('/') and requests_path != "-":
+                    requests_path = logs_dir + "/" + requests_path
+            logger = Logger(log_path, debug=debug)
+            #print(f"Service {name}: adding requests channel ->", requests_path)
+            logger.add_channel("requests", path=requests_path)
             self.Loggers[name] = logger
             #print(f"MPLogger: added logger for service '{name}'")
 
@@ -365,20 +387,17 @@ class MultiServerSubprocess(Process, Logged):
         self.Config = config = expand(yaml.load(open(self.ConfigFile, 'r'), Loader=yaml.SafeLoader))
         service_list = []
         for svc_cfg in services_from_config(config):
-            svc = Service(expand(svc_cfg), self.Logger)
+            svc = Service(svc_cfg, self.Logger)
             if svc.Initialized:
                 service_list.append(svc)
             else:
                 self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
-        names = ",".join(s.Name for s in service_list)
         if self.Server is None:
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
-            self.log(f"server created with services: {names}")
         else:
             self.Server.setServices(service_list)
-            self.log(f"server reconfigured with services: {names}")
+        self.log(f"Server configured with services:", ",\n".join([s.ServiceName for s in service_list]))
         self.Services = service_list
-        self.log("reconfigured")
         #print("MultiServerSubprocess.reconfigure() done")
 
     CheckConfigInterval = 5.0
@@ -462,7 +481,7 @@ class MultiServerSubprocess(Process, Logged):
             
 class MPMultiServer(PyThread, Logged):
             
-    def __init__(self, config_file):
+    def __init__(self, config_file, log_path, requests_path, debug_enabled):
         PyThread.__init__(self)
         Logged.__init__(self, "[Multiserver]")
         self.ConfigFile = config_file
@@ -472,7 +491,8 @@ class MPMultiServer(PyThread, Logged):
         self.Subprocesses = []
         self.Sock = None
         self.Stop = False
-        self.MPLogger = MPLogger(config_file)
+        #print(f"MPMultiServer: log_path:", log_path, "requests_path:", requests_path)
+        self.MPLogger = MPLogger(config_file, log_path = log_path, debug = debug_enabled, requests_path = requests_path)
         self.MPLogger.start()
         self.reconfigure()
 
@@ -553,7 +573,10 @@ class MPMultiServer(PyThread, Logged):
             p.stop()
         
 Usage = """
-python multiserver.py <config.yaml>
+python multiserver.py [options] <config.yaml>
+    -d                          - enable debugging
+    -l (<log file>|-)           - common log file
+    -r (<requests log file>|-)  - common requests file
 """
 
 class   SignalHandler:
@@ -570,22 +593,32 @@ class   SignalHandler:
             traceback.print_exc()
             
 def main():
-    import multiprocessing
+    import multiprocessing, getopt
     multiprocessing.set_start_method('fork')
-    if not sys.argv[1:] or sys.argv[1] in ("-?", "-h", "--help", "help"):
+    opts, args = getopt.getopt(sys.argv[1:], "?hl:r:d", ["help"])
+    opts = dict(opts)
+
+    if not args or "-?" in opts or "-h" in opts or "--help" in opts:
         print(Usage)
         sys.exit(2)
-    config_file = sys.argv[1]
+
+    service_log_path = log_path = opts.get("-l")
+    requests_path = opts.get("-r")
+    debug_enabled = "-d" in opts
+
+    config_file = args[0]
     config = expand(yaml.load(open(config_file, 'r'), Loader=yaml.SafeLoader))
     master_logger = None
     if "logger" in config:
         cfg = config["logger"]
-        debug = cfg.get("debug", False)
+        debug_enabled = debug_enabled or cfg.get("debug", False)
+        log_path = log_path or cfg.get("file", "multiserver.log")
         from webpie.logs import init
-        init(cfg.get("file", "-"), debug_enabled=debug)
+        #print("debug_enabled:", debug_enabled)
+        init(log_path, debug_enabled=debug_enabled)
     if "pid_file" in config:
         open(config["pid_file"], "w").write(str(os.getpid()))
-    ms = MPMultiServer(config_file)
+    ms = MPMultiServer(config_file, service_log_path, requests_path, debug_enabled or None)
     signal.signal(signal.SIGHUP, ms.reconfigure)
     #signal.signal(signal.SIGCHLD, ms.child_died)
     signal.signal(signal.SIGINT, ms.killme)

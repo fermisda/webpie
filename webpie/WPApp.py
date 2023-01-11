@@ -577,6 +577,9 @@ class WPApp(object):
         if isinstance(sanitizer, str):
             sanitizer = self.Sanitizers[sanitizer]
         self.Sanitizer = sanitizer
+        
+    def match(self, uri):
+        return not self.Prefix or uri.startswith(self.Prefix)
 
     def _app_lock(self):
         return self._AppLock
