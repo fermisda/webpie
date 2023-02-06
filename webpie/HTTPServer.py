@@ -276,7 +276,7 @@ class Service(Logged):
         self.ProcessorQueue = TaskQueue(5, capacity=capacity, delegate=self)
 
     def accept(self, request):
-        if not self.WPApp.match(request.URI):
+        if not self.WPApp.match(request.HTTPHeader.URI):
             return False, "no match"
         p = RequestProcessor(self.WPApp, request)
         request.AppName = self.Name
@@ -551,7 +551,7 @@ class HTTPServer(PyThread, Logged):
                 allow_proxies=allow_proxies) if keyfile else None
         
         if app is not None:
-            services = [Service(app, logger)]
+            services = [Service(app, logger=logger)]
             
         self.Services = services
         self.Stop = False
@@ -641,7 +641,7 @@ class HTTPServer(PyThread, Logged):
             if match:
                 return status == "accepted", service, status
         else:
-            return None, "no match"
+            return False, None, "no match"
 
     def taskFailed(self, queue, task, exc_type, exc, tb):
         traceback.print_exception(exc_type, exc, tb)
