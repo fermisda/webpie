@@ -297,8 +297,8 @@ class Service(Logged):
     def taskEnded(self, queue, task, _):
         request = task.Request
         header = request.HTTPHeader
-        log_line = '%s:%s :%s %s %s -> %s %s %s %s' % (   
-                        request.CAddr[0], request.CAddr[1], request.ServerPort, 
+        log_line = '%s %s:%s :%s %s %s -> %s %s %s %s' % (   
+                        request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                         header.Method, header.OriginalURI, 
                         request.AppName, header.path(),
                         task.StatusCode, task.ByteCount
@@ -417,9 +417,8 @@ class RequestReader(Task, Logged):
 
     def __init__(self, dispatcher, request, socket_wrapper, timeout, logger):
         Task.__init__(self)
-        self.Request = request
-        csock_addr = request.CSock.getpeername()
-        Logged.__init__(self, f"[reader {request.Id} client:{csock_addr}]", logger=logger, debug=True)
+        self.Request = request       
+        Logged.__init__(self, f"[RequestReader {request.Id} client:%s:%s]" % request.CAddr, logger=logger, debug=True)
         self.SocketWrapper = socket_wrapper
         self.Dispatcher = dispatcher
         self.Timeout = timeout
@@ -481,8 +480,8 @@ class RequestReader(Task, Logged):
                         request.send_response(503, "Service unavailable")
                     else:
                         request.send_response(500, "Request dispatch error " + dispatch_status)
-                    self.log('%s:%s :%s %s %s -> (%s)' % 
-                        (   request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                    self.log('%s %s:%s :%s %s %s -> (%s)' % 
+                        (   request.ID, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                             header.Method, header.OriginalURI, dispatch_status
                         )
                     )
