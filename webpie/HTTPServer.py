@@ -481,7 +481,7 @@ class RequestReader(Task, Logged):
                     else:
                         request.send_response(500, "Request dispatch error " + dispatch_status)
                     self.log('%s %s:%s :%s %s %s -> (%s)' % 
-                        (   request.ID, request.CAddr[0], request.CAddr[1], request.ServerPort, 
+                        (   request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
                             header.Method, header.OriginalURI, dispatch_status
                         )
                     )
