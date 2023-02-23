@@ -1,5 +1,5 @@
 import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime, threading, pprint
-from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile, Scheduler
+from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
 from webpie.logs import Logger, Logged
@@ -426,11 +426,13 @@ class MultiServerSubprocess(Process, Logged):
         self.MasterSide = False
         self.Sock.settimeout(5.0)
 
-        self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
-        self.Scheduler.add(self.check_config, interval = self.CheckConfigInterval, t0 = time.time() + self.CheckConfigInterval)
+        #self.Scheduler = Scheduler(max_concurrent = 2, daemon = True)
+        #self.Scheduler.add(self.check_config, interval = self.CheckConfigInterval, t0 = time.time() + self.CheckConfigInterval)
         #self.Scheduler.add(self.run_monitor, interval = self.MonitorInterval)
 
         while not self.Stop:
+            
+            self.check_config()
             
             # see if the parent process is still alive
             try:    os.kill(self.MasterPID, 0)
@@ -444,7 +446,7 @@ class MultiServerSubprocess(Process, Logged):
             else:
                 #print("run(): services:", [str(s) for s in self.Services])
                 self.Server.connection_accepted(csock, caddr)
-            
+
             if self.ConnectionToMaster.poll(0):
                 msg = self.ConnectionToMaster.recv()
                 self.log("message from master:", msg)
@@ -453,7 +455,7 @@ class MultiServerSubprocess(Process, Logged):
                 elif msg == "reconfigure":
                     self.reconfigure()
 
-        self.Scheduler.stop()
+        #self.Scheduler.stop()
         self.Server.close()
         self.Server.join()
         for svc in self.Services:
