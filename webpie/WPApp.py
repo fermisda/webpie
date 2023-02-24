@@ -3,7 +3,7 @@ from .webob.multidict import MultiDict
 from .webob import Request as webob_request
 from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound, HTTPBadRequest
 from . import Version as WebPieVersion
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, quote
     
 import os.path, os, stat, sys, traceback, fnmatch, datetime, inspect, json
 from threading import RLock
@@ -47,50 +47,9 @@ _MIME_TYPES_BASE = {
         "css":  "text/css"
     }
 
-def _sql_quote_sanitizer(name, value):
-    return value.replace("'", "''")
-
-def _check_unsafe_sanitizer(name, value, unsafe=r"<'>\|;"):
-    #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
-    if value and any(c in value for c in unsafe):
-        raise InvalidArgumentError(name, value)
-    return value
-
-_Sanitizers = {
-    "sql":  _sql_quote_sanitizer,
-    "safe":  _check_unsafe_sanitizer
-}
-
 #
 # Decorators
 #
-
-def sanitize(sanitizer=None, exclude=[], only=None):
-    def decorator(method):
-        szr = sanitizer
-        onl = only
-        excl = exclude
-        def decorated(handler, request, relpath, *params, **args):
-            "do-not-sanitize"       # signal "already sanitized"
-            sanitizer = szr
-            only = onl
-            exclude = excl
-            if isinstance(exclude, str):
-                exclude = [exclude]
-            if isinstance(only, str):
-                only = [only]
-            if sanitizer is None:
-                sanitizer = handler.App.Sanitizer
-            elif sanitizer is False:
-                sanitizer = None
-            elif isinstance(sanitizer, str):
-                sanitizer = handler.App.Sanitizers[sanitizer]
-            if sanitizer is not None:
-                relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude, only=only)
-                #print("decorated: relpath:", relpath)
-            return method(handler, request, relpath, *params, **args)
-        return decorated
-    return decorator
 
 def webmethod(permissions=None):
     #
@@ -543,10 +502,9 @@ class WPStaticHandler(WPHandler):
 class WPApp(object):
 
     Version = "Undefined"
-    Sanitizers = _Sanitizers
 
     def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", 
-            environ={}, unquote_args=True, sanitizer=None):
+            environ={}, unquote_args=True):
 
         self.RootHandler = self.RootClass = None
         if inspect.isclass(root_class_or_handler):
@@ -564,10 +522,6 @@ class WPApp(object):
         self.HandlerArgs = {}
         self.Environ = environ
         self.UnquoteArgs = unquote_args
-
-        if isinstance(sanitizer, str):
-            sanitizer = self.Sanitizers[sanitizer]
-        self.Sanitizer = sanitizer
         
     def match(self, uri):
         return not self.Prefix or uri.startswith(self.Prefix)
@@ -667,34 +621,6 @@ class WPApp(object):
                     else:
                         out[k] = v
         return out
-
-    def sanitize(self, sanitizer, request, relpath, args, exclude=[], only=None):
-        if sanitizer is None:
-            return relpath, args
-        if "(relpath)" not in exclude:  
-            relpath = sanitizer('(relpath)', relpath)
-        args = {
-                name: value if value is None 
-                        or name in exclude 
-                        or only is not None and name not in only
-                else (
-                    [sanitizer(name, v) for v in value] 
-                    if isinstance(value, list)
-                    else sanitizer(name, value)
-                ) 
-                for name, value in args.items()
-        }
-        #
-        # run sanitizer on GET and POST dictionaries of the request too, even though
-        # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
-        #
-        for name, value in list(request.GET.items()):
-            if name not in exclude and (only is None or name in olny):
-                request.GET[name] = sanitizer(name, value)
-        for name, value in list(request.POST.items()):
-            if name not in exclude and (only is None or name in olny):
-                request.POST[name] = sanitizer(name, value)
-        return relpath, args
 
     def wsgi_call(self, root_handler, environ, start_response):
         path = canonic_path(environ.get('PATH_INFO', ''))

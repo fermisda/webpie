@@ -1,7 +1,8 @@
-from webpie import WPApp, WPHandler
+from webpie import WPApp, WPHandler, sanitize
 
 class H(WPHandler):
    
+    @sanitize(only=["a"], unsafe="<>")
     def env(self, req, relpath, **args):
         lines = (
             ["request.environ:"]
@@ -19,7 +20,7 @@ class H(WPHandler):
 class App(WPApp):
 
     def __init__(self, handler):
-        WPApp.__init__(self, handler, sanitizer="sql")
+        WPApp.__init__(self, handler)
 
 application = App(H)
 
