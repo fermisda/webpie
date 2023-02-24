@@ -10,4 +10,4 @@ class MyHandler(WPHandler):
         def time(self, request, relpath):                               # 1
                 return time.ctime()+"\n", "text/plain"          # 2
 
-WPApp(MyHandler).run_server(8080)
+WPApp(MyHandler).run_server(8080, logging=True, debug=True)

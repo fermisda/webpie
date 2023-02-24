@@ -456,15 +456,23 @@ class RequestReader(Task, Logged):
                     error = True
             #self.debug("wrapped:", csock)
             if not error:
+                #print("no error")
                 header = HTTPHeader()
                 request_received, body = header.recv(csock)
                 csock.settimeout(saved_timeout) 
-    
+                
                 if not request_received or not header.is_valid() or not header.is_client():
                     # header not received - end
+                    #print("request invalid header.Error=", header.Error)
+                    #print("   request_received:", request_received)
+                    #print("   header.is_valid():", header.is_valid())
+                    #print("   header.is_client():", header.is_client())
+                    #print("   header.Protocol:", header.Protocol)
+                        
                     self.debug("request not received or invalid or not client request: %s" % (request,))
                     if header.Error:
                         self.debug("request read error: %s" % (header.Error,))
+                    dispatch_status = "invalid request"
                     return None
                 else:
                     request.HTTPHeader = header
@@ -474,10 +482,13 @@ class RequestReader(Task, Logged):
         finally:
             if not dispatched:
                 if header is not None and header.Complete:
+                    #print("dispatch status:", dispatch_status)
                     if dispatch_status == "no match":
                         request.send_response(404, "Service not found")
                     elif dispatch_status == "service unavailable":
                         request.send_response(503, "Service unavailable")
+                    elif dispatch_status == "invalid request":
+                        request.send_response(400, "Invalid request")
                     else:
                         request.send_response(500, "Request dispatch error " + dispatch_status)
                     self.log('%s %s:%s :%s %s %s -> (%s)' % 

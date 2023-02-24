@@ -50,7 +50,7 @@ _MIME_TYPES_BASE = {
 def _sql_quote_sanitizer(name, value):
     return value.replace("'", "''")
 
-def _check_unsafe_sanitizer(name, value, unsafe="'"):
+def _check_unsafe_sanitizer(name, value, unsafe=r"<'>\|;"):
     #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
     if value and any(c in value for c in unsafe):
         raise InvalidArgumentError(name, value)
@@ -86,7 +86,6 @@ def sanitize(sanitizer=None, exclude=[], only=None):
             elif isinstance(sanitizer, str):
                 sanitizer = handler.App.Sanitizers[sanitizer]
             if sanitizer is not None:
-                #print("sanitizing...")
                 relpath, args = handler.App.sanitize(sanitizer, request, relpath, args, exclude=exclude, only=only)
                 #print("decorated: relpath:", relpath)
             return method(handler, request, relpath, *params, **args)
@@ -134,14 +133,6 @@ def app_synchronized(method):
     return synchronized_method
 
 atomic = app_synchronized           # synonym
-
-def _sql_quote_sanitizer(name, value):
-    return value.replace("'", "''")
-
-def _check_unsafe_sanitizer(name, value, unsafe="'"):
-    if value and any(c in value for c in unsafe):
-        raise UnsafeArgumentError(name, value)
-    return value
 
 def canonic_path(path):
     # removes all occurances of '//' and '/./'
@@ -697,9 +688,12 @@ class WPApp(object):
         # run sanitizer on GET and POST dictionaries of the request too, even though
         # the values will not be updated. But at least the sanitizer has a chance to raise the UnsafeArgumentError exception
         #
-        for name, value in list(request.GET.items()) + list(request.POST.items()):
+        for name, value in list(request.GET.items()):
             if name not in exclude and (only is None or name in olny):
-                sanitizer(name, value)
+                request.GET[name] = sanitizer(name, value)
+        for name, value in list(request.POST.items()):
+            if name not in exclude and (only is None or name in olny):
+                request.POST[name] = sanitizer(name, value)
         return relpath, args
 
     def wsgi_call(self, root_handler, environ, start_response):
