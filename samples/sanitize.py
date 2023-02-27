@@ -2,7 +2,7 @@ from webpie import WPApp, WPHandler, sanitize
 
 class H(WPHandler):
    
-    @sanitize(only=["a"], unsafe="<>")
+    @sanitize(only=["a"], unsafe_re="ab?cc")
     def env(self, req, relpath, **args):
         lines = (
             ["request.environ:"]
