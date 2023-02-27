@@ -7,6 +7,8 @@ def sanitize(exclude=[], only=None, unsafe=r"<'>\|", safe_re=None, unsafe_re=Non
     unsafe_re = None if unsafe_re is None else re.compile(unsafe_re)
     if isinstance(exclude, str):
         exclude = [exclude]
+    if isinstance(only, str):
+        only = [only]
 
     def sanitize_generic(name, value):
         #print("_check_unsafe_sanitizer: name=", name, "   value:", value)
