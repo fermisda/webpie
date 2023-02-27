@@ -2,7 +2,7 @@ import re
 from .webob.exc import HTTPBadRequest
 from urllib.parse import quote
 
-def sanitize(exclude=[], only=None, unsafe=r"<'>\|", safe_re=None, unsafe_re=None, sanitizer=None):
+def sanitize(exclude=[], only=None, unsafe=r"<'>\|", safe_re=None, unsafe_re=None, ignore_payload=True, sanitizer=None):
     safe_re = None if safe_re is None else re.compile(safe_re)
     unsafe_re = None if unsafe_re is None else re.compile(unsafe_re)
     if isinstance(exclude, str):
@@ -33,9 +33,10 @@ def sanitize(exclude=[], only=None, unsafe=r"<'>\|", safe_re=None, unsafe_re=Non
                     if not isinstance(value, list):
                         value = [value]
                     [sanitizer(name, v) for v in value]
-        
-            for name, value in request.params.items():
-                if value is not None and name not in exclude and (onl is None or name in only):
+
+            params = request.GET.items() if ignore_payload else request.params.items()
+            for name, value in params:
+                if value is not None and name not in exclude and (onl is None or name in onl):
                     sanitizer(name, value)
             
             return method(handler, request, relpath, *params, **args)
