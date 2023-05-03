@@ -570,9 +570,6 @@ class HTTPServer(PyThread, Logged):
         self.Stop = True
         self.RequestReaderQueue.hold()
 
-    def join(self):
-        self.RequestReaderQueue.join()
-        
     @staticmethod
     def from_config(config, services, logger=None, logging=False, log_file=None, debug=None):
         port = config["port"]
@@ -630,7 +627,8 @@ class HTTPServer(PyThread, Logged):
         try:    self.Sock.close()
         except: pass
         self.Sock = None
-        
+        self.RequestReaderQueue.join()
+
     def connection_accepted(self, csock, caddr):        # called externally by multiserver
         request = Request(self.Port, csock, caddr)
         self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
