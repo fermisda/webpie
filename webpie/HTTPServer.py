@@ -341,7 +341,7 @@ class Request(object):
             QUERY_STRING = header.query(),
         )
         env.update(self.Environ)
-        env["wsgi.url_scheme"] = "http"
+        env["REQUEST_SCHEME"] = env["wsgi.url_scheme"] = "http"
         env["WebPie.request_id"] = self.Id
         env["WebPie.headers"] = header.Headers
 
@@ -349,7 +349,7 @@ class Request(object):
             subject, issuer = self.x509_names(ssl_info)
             env["SSL_CLIENT_S_DN"] = subject
             env["SSL_CLIENT_I_DN"] = issuer
-            env["wsgi.url_scheme"] = "https"
+            env["REQUEST_SCHEME"] = env["wsgi.url_scheme"] = "https"
         
         env["query_dict"] = self.parseQuery(header.query())
         
