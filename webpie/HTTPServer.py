@@ -542,9 +542,9 @@ class HTTPServer(PyThread, Logged):
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = "-", debug=False,
-                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False,
+                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False, **pythread_kv
                 ):
-        PyThread.__init__(self)
+        PyThread.__init__(self, **pythread_kv)
         self.Port = port
         self.Sock = sock
         assert self.Port is not None, "Port must be specified"
