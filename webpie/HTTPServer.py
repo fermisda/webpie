@@ -567,8 +567,13 @@ class HTTPServer(PyThread, Logged):
         self.Stop = False
 
     def close(self):
-        self.Stop = True
         self.RequestReaderQueue.hold()
+        self.Stop = True
+        try:    
+            self.Sock.close()
+        except Exception as e:
+            pass
+        self.Sock = None
 
     @staticmethod
     def from_config(config, services, logger=None, logging=False, log_file=None, debug=None):
