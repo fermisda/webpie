@@ -1,4 +1,4 @@
-import fnmatch, traceback, sys, time, os.path, stat, pprint, re, signal, importlib, platform
+import fnmatch, traceback, sys, time, os.path, stat, pprint, re, signal, importlib, platform, ipaddress
 
 from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue, Primitive
@@ -10,6 +10,8 @@ from .logs import Logged, Logger
 from .py3 import PY2, PY3, to_str, to_bytes
 
 import pythreader
+
+print("HTTPServer.py: importing")
 
 class BodyFile(object):
     
@@ -271,7 +273,7 @@ class Service(Logged):
     
     def __init__(self, app, capacity=100, logger=None):
         Logged.__init__(self, f"[{app.__class__.__name__}]", logger=logger)
-        self.Name = app.__class__.__name__
+        self.ServiceName = self.AppName = self.Name = app.__class__.__name__
         self.WPApp = app
         self.ProcessorQueue = TaskQueue(5, capacity=capacity, delegate=self)
 
@@ -279,7 +281,7 @@ class Service(Logged):
         if not self.WPApp.match(request.HTTPHeader.URI):
             return False, "no match"
         p = RequestProcessor(self.WPApp, request)
-        request.AppName = self.Name
+        request.AppName = self.AppName
         try:
             self.ProcessorQueue.add(p, timeout=0)
         except RuntimeError:
@@ -440,6 +442,7 @@ class RequestReader(Task, Logged):
         saved_timeout = csock.gettimeout() 
         dispatched = False
         dispatch_status = None
+        service = None
         try:
             #self.debug("started")
             self.Started = time.time()
@@ -481,19 +484,24 @@ class RequestReader(Task, Logged):
                     dispatched, service, dispatch_status = self.Dispatcher.dispatch(self.Request)
         finally:
             if not dispatched:
+                service_name = service.ServiceName if service else "-"
+                dispatch_status = dispatch_status or ""
                 if header is not None and header.Complete:
                     #print("dispatch status:", dispatch_status)
                     if dispatch_status == "no match":
                         request.send_response(404, "Service not found")
+                    elif dispatch_status == "client rejected":
+                        # do not send anything, just close the socket
+                        pass
                     elif dispatch_status == "service unavailable":
                         request.send_response(503, "Service unavailable")
                     elif dispatch_status == "invalid request":
                         request.send_response(400, "Invalid request")
                     else:
                         request.send_response(500, "Request dispatch error " + dispatch_status)
-                    self.log('%s %s:%s :%s %s %s -> (%s)' % 
+                    self.log('%s %s:%s :%s %s %s -> %s (%s)' % 
                         (   request.Id, request.CAddr[0], request.CAddr[1], request.ServerPort, 
-                            header.Method, header.OriginalURI, dispatch_status
+                            header.Method, header.OriginalURI, service_name, dispatch_status
                         )
                     )
                 else:
@@ -542,7 +550,9 @@ class HTTPServer(PyThread, Logged):
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = "-", debug=False,
-                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False, **pythread_kv
+                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False, 
+                ip_rules=None,
+                **pythread_kv
                 ):
         PyThread.__init__(self, **pythread_kv)
         self.Port = port
@@ -565,6 +575,23 @@ class HTTPServer(PyThread, Logged):
             
         self.Services = services
         self.Stop = False
+
+        # IPAllowDeny = [(ip_network, True/False), ...]
+        # ip_netwirk is something like "131.225.0.0/16"
+        # first network in the list to match the cient IP address will detrmine whether the client is
+        # to be accepted or rejected
+        # if the address does not match (e.g. the list is empty), the client will be accepted
+        # if you want to deny by default, add ("0.0.0.0/0", False) in the end
+        self.IPRules = [(ipaddress.ip_network(mask), allow) for mask, allow in (ip_rules or [])]
+        print("HTTPServer.__init__: IPRules:", self.IPRules)
+
+    def accepted_client_address(self, ip_addr):
+        addr = ipaddress.ip_address(ip_addr)
+        for network, allow in self.IPRules:
+            if addr in network:
+                return allow
+        else:
+            return True
 
     def close(self):
         self.RequestReaderQueue.hold()
@@ -590,12 +617,18 @@ class HTTPServer(PyThread, Logged):
         ca_file = config.get("ca_file")
         password = config.get("password")
         
+        ip_rules = []       # allow/deny rules for ip addresses
+        for line in config.get("client_ip_rules", []):
+            ip_mask, allow = line.split(None, 1)
+            ip_rules.append((ip_mask, allow.strip().lower() == "allow"))
+
         #print("HTTPServer.from_config: services:", services)
         
         return HTTPServer(port, services=services, logger=logger, max_connections=max_connections,
                 timeout = timeout, max_queued = queue_capacity, 
                 logging = logging, log_file=log_file, debug=debug,
-                certfile=certfile, keyfile=keyfile, verify=verify, ca_file=ca_file, password=password
+                certfile=certfile, keyfile=keyfile, verify=verify, ca_file=ca_file, password=password,
+                ip_rules=ip_rules
         )
     
     @synchronized
@@ -618,7 +651,10 @@ class HTTPServer(PyThread, Logged):
             caddr = ('-','-')
             try:
                 csock, caddr = self.Sock.accept()
-                self.connection_accepted(csock, caddr)
+                if self.accepted_client_address(caddr[0]):
+                    self.connection_accepted(csock, caddr)
+                else:
+                    csock.close()
             except Exception as exc:
                 #traceback.print_exc()
                 if not self.Stop:
@@ -635,10 +671,13 @@ class HTTPServer(PyThread, Logged):
         self.RequestReaderQueue.join()
 
     def connection_accepted(self, csock, caddr):        # called externally by multiserver
-        request = Request(self.Port, csock, caddr)
-        self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
-        reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self)
-        self.RequestReaderQueue << reader
+        if not self.accepted_client_address(caddr[0]):
+            csock.close()
+        else:
+            request = Request(self.Port, csock, caddr)
+            self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
+            reader = RequestReader(self, request, self.SocketWrapper, self.Timeout, self)
+            self.RequestReaderQueue << reader
         
     @synchronized
     def stop(self):

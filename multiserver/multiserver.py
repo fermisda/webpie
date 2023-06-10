@@ -1,4 +1,4 @@
-import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime, threading, pprint
+import traceback, sys, time, signal, importlib, yaml, os, os.path, datetime, threading, pprint, ipaddress
 from pythreader import Task, TaskQueue, Primitive, synchronized, PyThread, LogFile
 from webpie import HTTPServer, RequestProcessor, yaml_expand as expand, init_uid
 from multiprocessing import Process, Pipe
@@ -54,7 +54,9 @@ class Service(Primitive, Logged):
         Logged.__init__(self, name, logger=logger, debug=config.get("debug", False))
         Primitive.__init__(self, name=f"[service {name}]")        
         self.Config = None
+        self.IPRules = []
         self.Initialized = self.initialize(config)
+        print("Service.__init__: created:", self.ServiceName)
 
     def log_request(self, *message):
         if self.Logger is not None:
@@ -74,6 +76,13 @@ class Service(Primitive, Logged):
         self.Prefix = config.get("prefix", "/")
         self.ReplacePrefix = config.get("replace_prefix")
         self.Timeout = config.get("timeout", 10)
+
+        ip_rules = []       # allow/deny rules for ip addresses
+        for line in config.get("client_ip_rules", []):
+            print("Service.initialize: ip_rules line:", line)
+            ip_mask, allow = line.split(None, 1)
+            ip_rules.append((ipaddress.ip_network(ip_mask), allow.strip().lower() == "allow"))
+        self.IPRules = ip_rules
 
         saved_path = sys.path[:]
         saved_modules = set(sys.modules.keys())
@@ -137,8 +146,7 @@ class Service(Primitive, Logged):
                 if app is None:
                     self.error(f'Application object "{application}" not found in {fname}')
                     return False
-                    
-            
+
             self.AppArgs = args
             self.WSGIApp = app
 
@@ -174,6 +182,7 @@ class Service(Primitive, Logged):
                 del os.environ[n]
             os.environ.update(saved_environ)
             
+        print("Service.initialize:", self.ServiceName, "    IPRules:", self.IPRules)
         return True
             
     def taskFailed(self, queue, task, exc_type, exc_value, tb):
@@ -204,14 +213,30 @@ class Service(Primitive, Logged):
                     )
         self.log(log_line, channel="requests")
 
+    def accepted_client_address(self, ip_addr):
+        print("accepted_client_address:", self.ServiceName, "   ip_addr:", ip_addr, "   IPRules:", self.IPRules)
+        addr = ipaddress.ip_address(ip_addr)
+        for network, allow in self.IPRules:
+            print("netowrk:", network, type(network))
+            if addr in network:
+                return allow
+        else:
+            return True
+
     def accept(self, request):
         #print(f"Service {self}: accept()")
         if not self.Initialized:
             return False
+
+        caddr = request.CAddr
         header = request.HTTPHeader
         uri = header.URI
-        self.debug("accept: uri:", uri, " prefix:", self.Prefix)
+        self.debug("accept: client ip:", caddr[0], " uri:", uri, " prefix:", self.Prefix)
         #print("Sevice", self,"   accept: uri:", uri, " prefix:", self.Prefix)
+        
+        if not self.accepted_client_address(caddr[0]):
+            return True, "client rejected"
+        
         if uri.startswith(self.Prefix):
             uri = uri[len(self.Prefix):]
             if not uri.startswith("/"):     uri = "/" + uri
@@ -403,10 +428,16 @@ class MultiServerSubprocess(Process, Logged):
             else:
                 self.log(f'service "{svc.ServiceName}" failed to initialize - removing from service list')
         if self.Server is None:
+            print("MultiServerSubprocess: creating HTTPServer")
             self.Server = HTTPServer.from_config(self.Config, service_list, logger=self.Logger)
+            print("MultiServerSubprocess: HTTPServer created. IPRules:", self.Server.IPRules)
         else:
             self.Server.setServices(service_list)
         self.log(f"Server configured with services:", ",\n".join([s.ServiceName for s in service_list]))
+        if self.Server.IPRules:
+            self.log(f"Client IP address rules:")
+            for ipaddr, allow in self.Server.IPRules:
+                print(ipaddr, "allow" if allow else "deny")
         self.Services = service_list
         #print("MultiServerSubprocess.reconfigure() done")
 
