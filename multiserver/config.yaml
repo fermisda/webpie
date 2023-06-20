@@ -8,20 +8,21 @@ processes: 3
 
 templates:
     hello:
-                file: apps/hello.py
-                create: create_application
-                args: "%(name)"
-                prefix: /%(name)
+        file: apps/hello.py
+        create: create_application
+        args: "%(name)"
+        prefix: /%(name)
 services:
     -
-      template:  hello
-      names:
+        template:  hello
+        names:
             - a
             - b
             - xyz
+
     -
-     name: hello
-     prefix: /hello/
-     file: apps/hello.py
-     args: "%(name)"
-     create: create_application
+        name: hello
+        prefix: /hello/
+        file: apps/hello.py
+        args: "%(name)"
+        create: create_application
