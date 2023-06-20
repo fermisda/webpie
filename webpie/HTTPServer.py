@@ -341,7 +341,7 @@ class Request(object):
             QUERY_STRING = header.query(),
         )
         env.update(self.Environ)
-        env["wsgi.url_scheme"] = "http"
+        env["REQUEST_SCHEME"] = env["wsgi.url_scheme"] = "http"
         env["WebPie.request_id"] = self.Id
         env["WebPie.headers"] = header.Headers
 
@@ -349,7 +349,7 @@ class Request(object):
             subject, issuer = self.x509_names(ssl_info)
             env["SSL_CLIENT_S_DN"] = subject
             env["SSL_CLIENT_I_DN"] = issuer
-            env["wsgi.url_scheme"] = "https"
+            env["REQUEST_SCHEME"] = env["wsgi.url_scheme"] = "https"
         
         env["query_dict"] = self.parseQuery(header.query())
         
@@ -542,9 +542,9 @@ class HTTPServer(PyThread, Logged):
                 timeout = 20.0,
                 enabled = True, max_queued = 100,
                 logging = False, log_file = "-", debug=False,
-                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False,
+                certfile=None, keyfile=None, verify="none", ca_file=None, password=None, allow_proxies=False, **pythread_kv
                 ):
-        PyThread.__init__(self)
+        PyThread.__init__(self, **pythread_kv)
         self.Port = port
         self.Sock = sock
         assert self.Port is not None, "Port must be specified"
@@ -567,12 +567,14 @@ class HTTPServer(PyThread, Logged):
         self.Stop = False
 
     def close(self):
-        self.Stop = True
         self.RequestReaderQueue.hold()
+        self.Stop = True
+        try:    
+            self.Sock.close()
+        except Exception as e:
+            pass
+        self.Sock = None
 
-    def join(self):
-        self.RequestReaderQueue.join()
-        
     @staticmethod
     def from_config(config, services, logger=None, logging=False, log_file=None, debug=None):
         port = config["port"]
@@ -630,7 +632,8 @@ class HTTPServer(PyThread, Logged):
         try:    self.Sock.close()
         except: pass
         self.Sock = None
-        
+        self.RequestReaderQueue.join()
+
     def connection_accepted(self, csock, caddr):        # called externally by multiserver
         request = Request(self.Port, csock, caddr)
         self.debug("connection %s accepted from %s:%s" % (request.Id, caddr[0], caddr[1]))
