@@ -207,7 +207,7 @@ class Service(Primitive, Logged):
     def accept(self, request):
         #print(f"Service {self}: accept()")
         if not self.Initialized:
-            return False, "Service not initialized"
+            return False, "service not initialized"
         header = request.HTTPHeader
         uri = header.URI
         self.debug("accept: uri:", uri, " prefix:", self.Prefix)
