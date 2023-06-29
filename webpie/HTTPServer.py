@@ -325,10 +325,10 @@ class Request(object):
             try:
                 if macos:
                     # this seems to be necessary on MacOS to make sure all buffered data is sent before closing the socket
-                    os.fsync(self.CSock.fileno())
+                    self.CSock.shutdown(SHUT_RDWR)
                 self.CSock.close()
             except: 
-                pass
+                raise
             self.CSock = None
         self.SSLInfo = None
 
