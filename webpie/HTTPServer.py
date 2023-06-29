@@ -1,4 +1,4 @@
-import fnmatch, traceback, sys, time, os.path, stat, pprint, re, signal, importlib, platform
+import fnmatch, traceback, sys, time, os.path, stat, pprint, re, signal, importlib, platform, os
 
 from socket import *
 from pythreader import PyThread, synchronized, Task, TaskQueue, Primitive
@@ -10,6 +10,8 @@ from .logs import Logged, Logger
 from .py3 import PY2, PY3, to_str, to_bytes
 
 import pythreader
+
+macos = sys.platform.lower().startswith("darwin")
 
 class BodyFile(object):
     
@@ -320,7 +322,10 @@ class Request(object):
         
     def close(self):
         if self.CSock is not None:
-            try:    
+            try:
+                if macos:
+                    # this seems to be necessary on MacOS to make sure all buffered data is sent before closing the socket
+                    os.fsync(self.CSock.fileno())
                 self.CSock.close()
             except: 
                 pass
