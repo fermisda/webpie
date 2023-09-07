@@ -325,7 +325,8 @@ class Request(object):
             try:
                 if macos:
                     # this seems to be necessary on MacOS to make sure all buffered data is sent before closing the socket
-                    self.CSock.shutdown(SHUT_RDWR)
+                    try:    self.CSock.shutdown(SHUT_RDWR)
+                    except: pass
                 self.CSock.close()
             except: 
                 raise
