@@ -4,7 +4,7 @@ from .webob import Request as webob_request
 from .webob.exc import HTTPTemporaryRedirect, HTTPException, HTTPFound, HTTPForbidden, HTTPNotFound, HTTPBadRequest
 from . import Version as WebPieVersion
 from urllib.parse import unquote_plus, quote
-    
+
 import os.path, os, stat, sys, traceback, fnmatch, datetime, inspect, json
 from threading import RLock
 
@@ -12,14 +12,14 @@ PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
 
 if PY3:
-    def to_bytes(s):    
+    def to_bytes(s):
         return s if isinstance(s, bytes) else s.encode("utf-8")
-    def to_str(b):    
+    def to_str(b):
         return b if isinstance(b, str) else b.decode("utf-8", "ignore")
 else:
-    def to_bytes(s):    
+    def to_bytes(s):
         return bytes(s)
-    def to_str(b):    
+    def to_str(b):
         return str(b)
 
 class InvalidArgumentError(Exception):
@@ -70,7 +70,8 @@ def webmethod(permissions=None):
             #if isinstance(permissions, str):
             #    permissions = [permissions]
             if permissions is not None:
-                try:    roles = handler._roles(request, relpath)
+                try:
+                    roles = handler._roles(request, relpath)
                 except:
                     return HTTPForbidden("Not authorized\n")
                 if isinstance(roles, str):
@@ -110,27 +111,27 @@ class Request(webob_request):
         webob_request.__init__(self, *agrs, **kv)
         self.args = self.environ['QUERY_STRING']
         self._response = Response()
-        
+
     def write(self, txt):
         self._response.write(txt)
-        
+
     def getResponse(self):
         return self._response
-        
+
     def set_response_content_type(self, t):
         self._response.content_type = t
-        
+
     def get_response_content_type(self):
         return self._response.content_type
-        
+
     def del_response_content_type(self):
         pass
-        
-    response_content_type = property(get_response_content_type, 
+
+    response_content_type = property(get_response_content_type,
         set_response_content_type,
-        del_response_content_type, 
+        del_response_content_type,
         "Response content type")
-        
+
 class HTTPResponseException(Exception):
     def __init__(self, response):
         self.value = response
@@ -142,33 +143,33 @@ def makeResponse(resp):
     #
     # Response
     # text              -- ala Flask
-    # status    
+    # status
     # dictionary -> JSON representation, content_type = "text/json"
-    # (text, status)            
-    # (text, "content_type")            
-    # (text, {headers})            
+    # (text, status)
+    # (text, "content_type")
+    # (text, {headers})
     # (text, status, "content_type")
     # (text, status, {headers})
     # ...
     #
-    
+
 
     if isinstance(resp, Response):
         return resp
     elif isinstance(resp, int):
         return Response(status=resp)
-    
+
     app_iter = None
     text = None
     content_type = None
     status = None
     headers = None
-    
+
     if not isinstance(resp, tuple):
         resp = (resp,)
 
     for part in resp:
-        
+
         if app_iter is None and text is None:
             if isinstance(part, dict):
                 app_iter = [json.dumps(part).encode("utf-8")]
@@ -185,11 +186,11 @@ def makeResponse(resp):
                 continue
             elif isinstance(part, list):
                 app_iter = [to_bytes(x) for x in part]
-                continue            
+                continue
             elif isinstance(part, Iterable):
                 app_iter = (to_bytes(x) for x in part)
-                continue            
-        
+                continue
+
         if isinstance(part, dict):
             headers = part
         elif isinstance(part, int):
@@ -198,11 +199,11 @@ def makeResponse(resp):
             content_type = part
         else:
             raise ValueError("Can not convert to a Response: " + repr(resp))
-            
+
     #print("resp:", resp, " -->", "  app_iter:", app_iter,"  content_type:", content_type)
-            
+
     response = Response(app_iter=app_iter, status=status)
-    if headers is not None: 
+    if headers is not None:
         #print("setting headers:", headers)
         response.headers = headers
     if content_type:
@@ -213,24 +214,26 @@ def makeResponse(resp):
 class WPHandler(object):
 
     Version = ""
-    
+
     _Strict = False
     _MethodNames = None
-    
+
     DefaultMethod = "index"
-    
+
     def __init__(self, request, app):
         self.Request = request
         self.Path = None
         self.App = app
         self.BeingDestroyed = False
-        try:    self.AppURL = request.application_url
-        except: self.AppURL = None
+        try:
+            self.AppURL = request.application_url
+        except:
+            self.AppURL = None
         #self.RouteMap = []
         self._WebMethods = {}
         if not self._Strict:
             self.addHandler(".env", self._env__)
-            
+
     def addHandler(self, name, method):
         self._WebMethods[name] = method
 
@@ -239,8 +242,10 @@ class WPHandler(object):
 
     def _checkPermissions(self, x):
         #self.apacheLog("doc: %s" % (x.__doc__,))
-        try:    docstr = x.__doc__
-        except: docstr = None
+        try:
+            docstr = x.__doc__
+        except:
+            docstr = None
         if docstr and docstr[:10] == '__roles__:':
             roles = [x.strip() for x in docstr[10:].strip().split(',')]
             #self.apacheLog("roles: %s" % (roles,))
@@ -258,11 +263,13 @@ class WPHandler(object):
         for k in self.__dict__:
             o = self.__dict__[k]
             if isinstance(o, WPHandler):
-                try:    o.destroy()
-                except: pass
+                try:
+                    o.destroy()
+                except:
+                    pass
                 o._destroy()
         self.BeingDestroyed = False
-        
+
     def canonicPath(self, path):
         return canonic_path(path)
 
@@ -309,7 +316,7 @@ class WPHandler(object):
             buf.append(l)
         if buf:
             yield ''.join(buf)
-            
+
     def query_string(self, args):
         parts = []
         for name, values in args.items():
@@ -336,10 +343,10 @@ class WPHandler(object):
         #print 'redirect to: ', location
         #raise HTTPTemporaryRedirect(location=location)
         raise HTTPFound(location=location)
-        
+
     def getSessionData(self):
         return self.App.getSessionData()
-    
+
     def scriptUri(self, ignored=None):
         return self.Request.environ.get('SCRIPT_NAME', os.environ.get('SCRIPT_NAME', ''))
 
@@ -350,7 +357,7 @@ class WPHandler(object):
         top = self.App.appRootPath(self.Request.environ)
         if top == "/":  top = ""
         return top
-        
+
     appTopPath = appRootPath            # synonym for backward compatibility
 
     def externalPath(self, path):
@@ -366,7 +373,7 @@ class WPHandler(object):
     @property
     def session(self):
         return self.Request.environ["webpie.session"]
-        
+
     #
     # This web methods can be used for debugging
     # call it as ".../.env"
@@ -406,7 +413,7 @@ class WPHandler(object):
         self.Path = path or "/"
         subhandler = None
         allowed = not self._Strict
-        
+
         if hasattr(self, word):
             subhandler = getattr(self, word)
         elif word in self._WebMethods:
@@ -423,10 +430,10 @@ class WPHandler(object):
         elif callable(subhandler):
             allowed = allowed and not word.startswith('_')
             allowed = allowed or (
-                        (self._MethodNames is not None 
+                        (self._MethodNames is not None
                                 and word in self._MethodNames)
                     or
-                        (hasattr(subhandler, "__doc__") 
+                        (hasattr(subhandler, "__doc__")
                                 and subhandler.__doc__ == _WebMethodSignature)
             )
             if not allowed:
@@ -439,7 +446,7 @@ class WPHandler(object):
             raise HTTPNotFound("invalid path: " + orig_path)
 
 class WPStaticHandler(WPHandler):
-    
+
     def __init__(self, request, app, root="static", default_file="index.html", cache_ttl=None):
         WPHandler.__init__(self, request, app)
         self.DefaultFile = default_file
@@ -449,29 +456,29 @@ class WPStaticHandler(WPHandler):
         self.CacheTTL = cache_ttl
 
     def __call__(self, request, relpath, **args):
-        
+
         if ".." in relpath:
             return Response("Forbidden", status=403)
 
         if relpath == "index":
             self.redirect("./index.html")
-            
+
         home = self.Root
         path = os.path.join(home, relpath)
-        
+
         if not os.path.exists(path):
             return Response("Not found", status=404)
 
         if os.path.isdir(path) and self.DefaultFile:
             path = os.path.join(path, self.DefaultFile)
-            
+
         if not os.path.isfile(path):
             #print "not a regular file"
             return Response("Not found", status=404)
-            
+
         mtime = os.path.getmtime(path)
         mtime = datetime.datetime.utcfromtimestamp(mtime)
-        
+
         if "If-Modified-Since" in request.headers:
             # <day-name>, <day> <month> <year> <hour>:<minute>:<second> GMT
             dt_str = request.headers["If-Modified-Since"]
@@ -481,7 +488,7 @@ class WPStaticHandler(WPHandler):
                 dt = datetime.datetime.strptime(dt_str, '%d %b %Y %H:%M:%S')
                 if mtime < dt:
                     return 304
-            
+
         size = os.path.getsize(path)
 
         ext = path.rsplit('.',1)[-1]
@@ -496,14 +503,14 @@ class WPStaticHandler(WPHandler):
         resp = Response(app_iter = read_iter(open(path, "rb")), content_length=size, content_type = mime_type)
         #resp.headers["Last-Modified"] = mtime.strftime("%a, %d %b %Y %H:%M:%S GMT")
         if self.CacheTTL is not None:
-            resp.cache_control.max_age = self.CacheTTL        
+            resp.cache_control.max_age = self.CacheTTL
         return resp
 
 class WPApp(object):
 
     Version = "Undefined"
 
-    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="", 
+    def __init__(self, root_class_or_handler, strict=False, prefix=None, replace_prefix="",
             environ={}, unquote_args=True):
 
         self.RootHandler = self.RootClass = None
@@ -522,7 +529,7 @@ class WPApp(object):
         self.HandlerArgs = {}
         self.Environ = environ
         self.UnquoteArgs = unquote_args
-        
+
     def match(self, uri):
         return not self.Prefix or uri.startswith(self.Prefix)
 
@@ -557,7 +564,7 @@ class WPApp(object):
             self.JEnv.filters[n] = f
         self.JGlobals = {}
         self.JGlobals.update(globals)
-                
+
     @app_synchronized
     def setJinjaFilters(self, filters):
         for n, f in filters.items():
@@ -585,7 +592,7 @@ class WPApp(object):
                 matched = path
             elif path.startswith(self.Prefix + '/'):
                 matched = self.Prefix
-                
+
             if matched is None:
                 return None
 
@@ -593,7 +600,7 @@ class WPApp(object):
 
             if self.ReplacePrefix:
                 path = self.ReplacePrefix + path
-                
+
             path = canonic_path(path or "/")
             #print(f"converted to: [{path}]")
 
@@ -652,7 +659,7 @@ class WPApp(object):
         except Exception as e:
             response = self.applicationErrorResponse(str(e), sys.exc_info())
 
-        try:    
+        try:
             response = makeResponse(response)
         except ValueError as e:
             response = self.applicationErrorResponse(str(e), sys.exc_info())
@@ -691,11 +698,11 @@ class WPApp(object):
         path = self.convertPath(path)
         if path is None:
             return HTTPNotFound()(environ, start_response)
-        
+
         #if (not path or path=="/") and self.DefaultPath is not None:
         #    #print ("redirecting to", self.DefaultPath)
         #    return HTTPFound(location=self.DefaultPath)(environ, start_response)
-            
+
         environ["PATH_INFO"] = path
 
         req = Request(environ)
@@ -715,7 +722,7 @@ class WPApp(object):
 
         root_handler = self.RootHandler or self.RootClass(req, self, *self.HandlerParams, **self.HandlerArgs)
         #print("root_handler:", root_handler)
-            
+
         try:
             out = self.wsgi_call(root_handler, environ, start_response)
             return out
@@ -723,20 +730,20 @@ class WPApp(object):
             resp = self.applicationErrorResponse(
                 "Uncaught exception", sys.exc_info())
         return resp(environ, start_response)
-        
+
     def init(self):
         # overraidable. will be called once after self.ScriptName, self.ScriptHome, self.Script are initialized
         # and app.externalPath() is ready to be used
         # it is good idea to init Jinja environment here
         pass
-        
+
     def jinja_globals(self):
         # override me
         return {}
 
     def add_globals(self, g):
         top = self.appRootPath()
-        g.update({ 
+        g.update({
             "GLOBAL_AppRootPath":   top,
             "GLOBAL_AppTopPath":    top  # for backward compatibility, deprecated
         })
@@ -749,7 +756,7 @@ class WPApp(object):
         if top == "/":  top = ""            # make it possible to concatenate a tail, e.g.:
                                             # appRootPath() + "/static"
         return top
-        
+
     appTopPath = appRootPath            # synonym for backward compatibility, deprecated
 
     def render_to_string(self, temp, **kv):
@@ -767,30 +774,30 @@ class WPApp(object):
         srv.join()
 
 class LambdaHandler(WPHandler):
-    
+
     def __init__(self, func, request, app):
         WPHandler.__init__(self, request, app)
         self.F = func
-        
+
     def __call__(self, request, relpath, **args):
         out = self.F(request, relpath, **args)
         return out
-        
+
 class LambdaHandlerFactory(object):
-    
+
     def __init__(self, func):
         self.Func = func
-        
+
     def __call__(self, request, app):
         return LambdaHandler(self.Func, request, app)
-        
+
 if __name__ == '__main__':
     from HTTPServer import HTTPServer
-    
+
     class MyApp(WPApp):
         pass
-        
+
     class MyHandler(WPHandler):
         pass
-            
+
     MyApp(MyHandler).run_server(8080)
